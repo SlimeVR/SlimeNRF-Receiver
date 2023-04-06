@@ -144,6 +144,7 @@ void event_handler(struct esb_evt const *event)
 	case ESB_EVENT_RX_RECEIVED:
 		if (esb_read_rx_payload(&rx_payload) == 0) {
 			if (rx_payload.length == 8) {
+				LOG_INF("RX Pairing Packet");
 				for (int i = 0; i < 8; i++) {
 					pairing_buf[i] = rx_payload.data[i];
 				}
@@ -400,11 +401,17 @@ void main(void)
 
 	clocks_start();
 
-	const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(DT_NODELABEL(button0), gpios);
-	bool enter_pairing = gpio_pin_get_dt(&button);
+	usb_enable(status_cb);
 
-	if (enter_pairing) { // Pairing mode
+	k_work_init(&report_send, send_report);
+
+	if (false) { // Pairing mode
+		k_msleep(1000); // Wait for hid
 		LOG_INF("Starting in pairing mode");
+		for (int i = 0; i < stored_trackers; i++) {
+			report.imu_id = i << 4;
+			k_work_submit(&report_send);
+		}
 		for (int i = 0; i < 4; i++) {
 			base_addr_0[i] = discovery_base_addr_0[i];
 			base_addr_1[i] = discovery_base_addr_1[i];
@@ -413,7 +420,6 @@ void main(void)
 			addr_prefix[i] = discovery_addr_prefix[i];
 		}
 		esb_initialize();
-		esb_write_payload(&tx_payload_pair);
 		esb_start_rx();
 		tx_payload_pair.noack = false;
 		uint64_t addr = (((uint64_t)(NRF_FICR->DEVICEADDR[1]) << 32) | NRF_FICR->DEVICEADDR[0]) & 0xFFFFFF;
@@ -421,24 +427,26 @@ void main(void)
 		for (int i = 0; i < 6; i++) {
 			tx_payload_pair.data[i+2] = (addr >> (8 * i)) & 0xFF;
 		}
-		while (enter_pairing) { // Run indefinitely (User must unplug dongle)
+		while (true) { // Run indefinitely (User must unplug dongle)
 			uint64_t found_addr = 0;
-			for (int i; i < 6; i++) { // Take device address from RX buffer
-				found_addr |= ((uint64_t)pairing_buf[i+2] << (8*i)) & 0xFF;
+			for (int i = 0; i < 6; i++) { // Take device address from RX buffer
+				found_addr |= (uint64_t)pairing_buf[i+2] << (8*i);
 			}
 			uint16_t send_tracker_id = stored_trackers; // Use new tracker id
-			for (int i; i < 16; i++) { // Check if the device is already stored
-				if (stored_tracker_addr[i] == found_addr) {
-					LOG_INF("Found device linked to id %d with address %lld", i, found_addr);
+			for (int i = 0; i < 16; i++) { // Check if the device is already stored
+				if (found_addr != 0 && stored_tracker_addr[i] == found_addr) {
+					//LOG_INF("Found device linked to id %d with address %lld", i, found_addr);
 					send_tracker_id = i;
 				}
 			}
-			if (send_tracker_id == stored_trackers && stored_trackers < 16) { // New device, add to NVS
+			if (found_addr != 0 && send_tracker_id == stored_trackers && stored_trackers < 16) { // New device, add to NVS
 				LOG_INF("Added device on id %d with address %lld", stored_trackers, found_addr);
+				report.imu_id = stored_trackers << 4;
 				stored_tracker_addr[stored_trackers] = found_addr;
 				stored_trackers++;
 				nvs_write(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
 				nvs_write(&fs, STORED_TRACKER_ADDR, &stored_tracker_addr, sizeof(stored_tracker_addr));
+				k_work_submit(&report_send);
 			}
 			if (send_tracker_id < 16) { // Make sure the dongle is not full
 				tx_payload_pair.data[0] = pairing_buf[0]; // Use int sent from device to make sure packet is for that device
@@ -446,7 +454,8 @@ void main(void)
 				tx_payload_pair.data[0] = 0; // Invalidate packet
 			}
 			tx_payload_pair.data[1] = send_tracker_id; // Add tracker id to packet
-			esb_flush_tx();
+			//esb_flush_rx();
+			//esb_flush_tx();
 			esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			k_msleep(500);
 		}
@@ -496,12 +505,6 @@ void main(void)
 
 	LOG_INF("Initialization complete");
 
-	err = esb_write_payload(&tx_payload);
-	if (err) {
-		LOG_ERR("Write payload, err %d", err);
-		return;
-	}
-
 	LOG_INF("Setting up for packet receiption");
 
 	err = esb_start_rx();
@@ -513,14 +516,6 @@ void main(void)
 	int ret;
 
 	LOG_INF("Starting application");
-
-	ret = usb_enable(status_cb);
-	if (ret != 0) {
-		LOG_ERR("Failed to enable USB");
-		return;
-	}
-
-	k_work_init(&report_send, send_report);
 
 	/* return to idle thread */
 	return;
