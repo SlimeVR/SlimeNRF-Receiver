@@ -21,6 +21,19 @@
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/class/usb_hid.h>
 
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
+#include <zephyr/fs/nvs.h>
+
+static struct nvs_fs fs;
+
+#define NVS_PARTITION		storage_partition
+#define NVS_PARTITION_DEVICE	FIXED_PARTITION_DEVICE(NVS_PARTITION)
+#define NVS_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(NVS_PARTITION)
+
+#define STORED_TRACKERS 1
+#define STORED_TRACKER_ADDR 2
+
 #define pi 3.141592653589793238462643383279502884f
 
 #define INT16_TO_UINT16(x) ((uint16_t)32768 + (uint16_t)(x))
@@ -47,9 +60,16 @@ BUILD_ASSERT(DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
 			  DT_GPIO_CTLR(DT_ALIAS(led3), gpios)),
 	     "All LEDs must be on the same port");
 
+uint8_t stored_trackers = 0;
+uint64_t stored_tracker_addr[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
+uint8_t pairing_buf[8] = {0,0,0,0,0,0,0,0};
+
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
-	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17);
+	0, 0, 0, 0, 0, 0, 0, 0);
+static struct esb_payload tx_payload_pair = ESB_CREATE_PAYLOAD(0,
+	0, 0, 0, 0, 0, 0, 0, 0);
 
 static int leds_init(void)
 {
@@ -123,55 +143,22 @@ void event_handler(struct esb_evt const *event)
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 		if (esb_read_rx_payload(&rx_payload) == 0) {
-//			LOG_DBG("Packet received, len %d : "
-//				"0x%02x, 0x%02x, 0x%02x, 0x%02x, "
-//				"0x%02x, 0x%02x, 0x%02x, 0x%02x",
-//				rx_payload.length, rx_payload.data[0],
-//				rx_payload.data[1], rx_payload.data[2],
-//				rx_payload.data[3], rx_payload.data[4],
-//				rx_payload.data[5], rx_payload.data[6],
-//				rx_payload.data[7]);
-
-//double rx_buf[7];
-//rx_buf[0] = FIXED_14_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[2] << 8) | rx_payload.data[3]));
-//rx_buf[1] = FIXED_14_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]));
-//rx_buf[2] = FIXED_14_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]));
-//rx_buf[3] = FIXED_14_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[8] << 8) | rx_payload.data[9]));
-//rx_buf[4] = FIXED_10_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[10] << 8) | rx_payload.data[11]));
-//rx_buf[5] = FIXED_10_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]));
-//rx_buf[6] = FIXED_10_TO_DOUBLE(UINT16_TO_INT16(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]));
-//float q[4];
-//q[0] = rx_buf[0];
-//q[1] = rx_buf[1];
-//q[2] = rx_buf[2];
-//q[3] = rx_buf[3];
-//float a12 = 2.0f * (q[1] * q[2] + q[0] * q[3]);
-//float a22 = q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3];
-//float a31 = 2.0f * (q[0] * q[1] + q[2] * q[3]);
-//float a32 = 2.0f * (q[1] * q[3] - q[0] * q[2]);
-//float a33 = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3];
-//float pitch = -asinf(a32);
-//float roll = atan2f(a31, a33);
-//float yaw = atan2f(a12, a22);
-//pitch *= 180.0f / pi;
-//yaw *= 180.0f / pi;
-//if (yaw < 0) yaw += 360.0f; // Ensure yaw stays between 0 and 360
-//roll *= 180.0f / pi;
-report.imu_id=rx_payload.data[0];
-report.battery=rx_payload.data[1];
-report.qi=(((uint16_t)rx_payload.data[2] << 8) | rx_payload.data[3]);
-report.qj=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
-report.qk=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
-report.ql=(((uint16_t)rx_payload.data[8] << 8) | rx_payload.data[9]);
-report.ax=(((uint16_t)rx_payload.data[10] << 8) | rx_payload.data[11]);
-report.ay=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
-report.az=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
-	k_work_submit(&report_send);
-
-//			LOG_DBG("ID:%d BAT:%d I:%0.2f J:%0.2f K:%0.2f L:%0.2f P:%0.2f R:%0.2f Y:%0.2f",
-//				rx_payload.data[0],rx_payload.data[1],q[0],q[1],q[2],q[3],pitch,roll,yaw);
-
-//			leds_update(rx_payload.data[1]);
+			if (rx_payload.length == 8) {
+				for (int i = 0; i < 8; i++) {
+					pairing_buf[i] = rx_payload.data[i];
+				}
+			} else {
+				report.imu_id=rx_payload.data[0];
+				report.battery=rx_payload.data[1];
+				report.qi=(((uint16_t)rx_payload.data[2] << 8) | rx_payload.data[3]);
+				report.qj=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
+				report.qk=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
+				report.ql=(((uint16_t)rx_payload.data[8] << 8) | rx_payload.data[9]);
+				report.ax=(((uint16_t)rx_payload.data[10] << 8) | rx_payload.data[11]);
+				report.ay=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
+				report.az=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
+				k_work_submit(&report_send);
+			}
 		} else {
 			LOG_ERR("Error while reading rx packet");
 		}
@@ -212,15 +199,18 @@ int clocks_start(void)
 	return 0;
 }
 
+// this was randomly generated
+uint8_t discovery_base_addr_0[4] = {0x62, 0x39, 0x8A, 0xF2};
+uint8_t discovery_base_addr_1[4] = {0x28, 0xFF, 0x50, 0xB8};
+uint8_t discovery_addr_prefix[8] = {0xFE, 0xFF, 0x29, 0x27, 0x09, 0x02, 0xB2, 0xD6};
+
+uint8_t base_addr_0[4] = {0,0,0,0};
+uint8_t base_addr_1[4] = {0,0,0,0};
+uint8_t addr_prefix[8] = {0,0,0,0,0,0,0,0};
+
 int esb_initialize(void)
 {
 	int err;
-	/* These are arbitrary default addresses. In end user products
-	 * different addresses should be used for each set of devices.
-	 */
-	uint8_t base_addr_0[4] = {0xE7, 0xE7, 0xE7, 0xE7};
-	uint8_t base_addr_1[4] = {0xC2, 0xC2, 0xC2, 0xC2};
-	uint8_t addr_prefix[8] = {0xE7, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8};
 
 	struct esb_config config = ESB_DEFAULT_CONFIG;
 
@@ -395,14 +385,94 @@ SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
 void main(void)
 {
+	struct flash_pages_info info;
+	fs.flash_device = NVS_PARTITION_DEVICE;
+	fs.offset = NVS_PARTITION_OFFSET; // Start NVS FS here
+	flash_get_page_info_by_offs(fs.flash_device, fs.offset, &info);
+	fs.sector_size = info.size; // Sector size equal to page size
+	fs.sector_count = 4U; // 4 sectors
+	nvs_mount(&fs);
+
+	nvs_read(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
+	nvs_read(&fs, STORED_TRACKER_ADDR, &stored_tracker_addr, sizeof(stored_tracker_addr));
+
+	// Generate addresses from device address
+	uint64_t addr = (((uint64_t)(NRF_FICR->DEVICEADDR[1]) << 32) | NRF_FICR->DEVICEADDR[0]) & 0xFFFFFF;
+	uint8_t buf[8] = {0,0,0,0,0,0,0,0};
+	for (int i = 0; i < 6; i++) {
+		buf[i+2] = (addr >> (8 * i)) & 0xFF;
+	}
+	uint8_t buf2[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	for (int i = 0; i < 4; i++) {
+		buf2[i] = buf[i+2];
+		buf2[i+4] = buf[i+2] + buf[6];
+	}
+	for (int i = 0; i < 8; i++) {
+		buf2[i+8] = buf[7] + i;
+	}
+	for (int i = 0; i < 16; i++) {
+		if (buf2[i] == 0x00 || buf2[i] == 0x55 || buf2[i] == 0xAA) {
+			buf2[i] += 8;
+		};
+	}
+	for (int i = 0; i < 4; i++) {
+		base_addr_0[i] = buf2[i];
+		base_addr_1[i] = buf2[i+4];
+	}
+	for (int i = 0; i < 8; i++) {
+		addr_prefix[i] = buf2[i+8];
+	}
+
+	clocks_start();
+
+	if (true) { // Pairing mode
+		for (int i = 0; i < 4; i++) {
+			base_addr_0[i] = discovery_base_addr_0[i];
+			base_addr_1[i] = discovery_base_addr_1[i];
+		}
+		for (int i = 0; i < 8; i++) {
+			addr_prefix[i] = discovery_addr_prefix[i];
+		}
+		esb_initialize();
+		esb_write_payload(&tx_payload_pair);
+		esb_start_rx();
+		tx_payload_pair.noack = false;
+		uint64_t addr = (((uint64_t)(NRF_FICR->DEVICEADDR[1]) << 32) | NRF_FICR->DEVICEADDR[0]) & 0xFFFFFF;
+		for (int i = 0; i < 6; i++) {
+			tx_payload_pair.data[i+2] = (addr >> (8 * i)) & 0xFF;
+		}
+		while (true) { // Run indefinitely (User must unplug dongle)
+			uint64_t found_addr = 0;
+			for (int i; i < 6; i++) { // Take device address from RX buffer
+				found_addr |= ((uint64_t)pairing_buf[i+2] << (8*i)) & 0xFF;
+			}
+			uint16_t send_tracker_id = stored_trackers; // Use new tracker id
+			for (int i; i < 16; i++) { // Check if the device is already stored
+				if (stored_tracker_addr[i] == found_addr) {
+					send_tracker_id = i;
+				}
+			}
+			if (send_tracker_id == stored_trackers && stored_trackers < 16) { // New device, add to NVS
+				stored_tracker_addr[stored_trackers] = found_addr;
+				stored_trackers++;
+				nvs_write(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
+				nvs_write(&fs, STORED_TRACKER_ADDR, &stored_tracker_addr, sizeof(stored_tracker_addr));
+			}
+			if (send_tracker_id < 16) { // Make sure the dongle is not full
+				tx_payload_pair.data[0] = pairing_buf[0]; // Use int sent from device to make sure packet is for that device
+			} else {
+				tx_payload_pair.data[0] = 0; // Invalidate packet
+			}
+			tx_payload_pair.data[1] = send_tracker_id; // Add tracker id to packet
+			esb_flush_tx();
+			esb_write_payload(&tx_payload_pair); // Add to TX buffer
+			k_msleep(500);
+		}
+	}
+
 	int err;
 
 	LOG_INF("Enhanced ShockBurst prx sample");
-
-	err = clocks_start();
-	if (err) {
-		return;
-	}
 
 	err = leds_init();
 	if (err) {
