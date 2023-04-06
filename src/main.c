@@ -434,7 +434,7 @@ void main(void)
 		LOG_INF("%d devices stored", stored_trackers);
 	}
 
-	if (reset_mode == 1) { // Pairing mode
+	if (stored_trackers == 0 || reset_mode == 1) { // Pairing mode
 		reset_mode = 0;
 		LOG_INF("Starting in pairing mode");
 		for (int i = 0; i < stored_trackers; i++) {
@@ -456,7 +456,7 @@ void main(void)
 		for (int i = 0; i < 6; i++) {
 			tx_payload_pair.data[i+2] = (addr >> (8 * i)) & 0xFF;
 		}
-		while (true) { // Run indefinitely (User must unplug dongle)
+		while (true) { // Run indefinitely (User must reset/unplug dongle)
 			uint64_t found_addr = 0;
 			for (int i = 0; i < 6; i++) { // Take device address from RX buffer
 				found_addr |= (uint64_t)pairing_buf[i+2] << (8*i);
