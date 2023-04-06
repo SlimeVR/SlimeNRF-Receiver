@@ -405,7 +405,7 @@ void main(void)
 
 	k_work_init(&report_send, send_report);
 
-	if (false) { // Pairing mode
+	if (false) { // Pairing mode // TODO: Need to make this enterable
 		k_msleep(1000); // Wait for hid
 		LOG_INF("Starting in pairing mode");
 		for (int i = 0; i < stored_trackers; i++) {
