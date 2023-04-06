@@ -34,6 +34,10 @@ static struct nvs_fs fs;
 #define STORED_TRACKERS 1
 #define STORED_TRACKER_ADDR 2
 
+#define RBT_CNT_ID 2
+#define STORED_ADDR_0 3
+// 0-15 -> id 3-18
+
 #define pi 3.141592653589793238462643383279502884f
 
 #define INT16_TO_UINT16(x) ((uint16_t)32768 + (uint16_t)(x))
@@ -384,8 +388,13 @@ static int composite_pre_init(const struct device *dev)
 
 SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
+uint8_t reset_mode = 0;
 void main(void)
 {
+	int32_t reset_reason = NRF_POWER->RESETREAS;
+	NRF_POWER->RESETREAS = NRF_POWER->RESETREAS; // Clear RESETREAS
+	uint8_t reboot_counter = 0;
+
 	struct flash_pages_info info;
 	fs.flash_device = NVS_PARTITION_DEVICE;
 	fs.offset = NVS_PARTITION_OFFSET; // Start NVS FS here
@@ -394,19 +403,39 @@ void main(void)
 	fs.sector_count = 4U; // 4 sectors
 	nvs_mount(&fs);
 
-	nvs_read(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
-	nvs_read(&fs, STORED_TRACKER_ADDR, &stored_tracker_addr, sizeof(stored_tracker_addr));
-
-	LOG_INF("%d devices stored", stored_trackers);
-
 	clocks_start();
 
 	usb_enable(status_cb);
 
 	k_work_init(&report_send, send_report);
 
-	if (false) { // Pairing mode // TODO: Need to make this enterable
-		k_msleep(1000); // Wait for hid
+	if (reset_reason & 0x01) { // Count pin resets
+		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
+		reset_mode = reboot_counter;
+		reboot_counter++;
+		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
+		k_msleep(1000); // Wait before clearing counter and continuing
+		reboot_counter = 0;
+		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
+	}
+
+	if (reset_mode == 2) { // Clear stored data
+		reset_mode = 1; // Enter pairing mode
+		nvs_write(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
+		for (int i = 0; i < 16; i++) {
+			nvs_write(&fs, STORED_ADDR_0+i, &stored_tracker_addr[i], sizeof(stored_tracker_addr[0]));
+		}
+		LOG_INF("NVS Reset");
+	} else {
+		nvs_read(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
+		for (int i = 0; i < 16; i++) {
+			nvs_read(&fs, STORED_ADDR_0+i, &stored_tracker_addr[i], sizeof(stored_tracker_addr[0]));
+		}
+		LOG_INF("%d devices stored", stored_trackers);
+	}
+
+	if (reset_mode == 1) { // Pairing mode
+		reset_mode = 0;
 		LOG_INF("Starting in pairing mode");
 		for (int i = 0; i < stored_trackers; i++) {
 			report.imu_id = i << 4;
@@ -433,7 +462,7 @@ void main(void)
 				found_addr |= (uint64_t)pairing_buf[i+2] << (8*i);
 			}
 			uint16_t send_tracker_id = stored_trackers; // Use new tracker id
-			for (int i = 0; i < 16; i++) { // Check if the device is already stored
+			for (int i = 0; i < stored_trackers; i++) { // Check if the device is already stored
 				if (found_addr != 0 && stored_tracker_addr[i] == found_addr) {
 					//LOG_INF("Found device linked to id %d with address %lld", i, found_addr);
 					send_tracker_id = i;
@@ -443,9 +472,9 @@ void main(void)
 				LOG_INF("Added device on id %d with address %lld", stored_trackers, found_addr);
 				report.imu_id = stored_trackers << 4;
 				stored_tracker_addr[stored_trackers] = found_addr;
+				nvs_write(&fs, STORED_ADDR_0+stored_trackers, &stored_tracker_addr[stored_trackers], sizeof(stored_tracker_addr[0]));
 				stored_trackers++;
 				nvs_write(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
-				nvs_write(&fs, STORED_TRACKER_ADDR, &stored_tracker_addr, sizeof(stored_tracker_addr));
 				k_work_submit(&report_send);
 			}
 			if (send_tracker_id < 16) { // Make sure the dongle is not full
