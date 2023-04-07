@@ -155,6 +155,7 @@ void event_handler(struct esb_evt const *event)
 			} else {
 				report.imu_id=rx_payload.data[0];
 				report.battery=rx_payload.data[1];
+				report.battery=rx_payload.rssi;
 				report.qi=(((uint16_t)rx_payload.data[2] << 8) | rx_payload.data[3]);
 				report.qj=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
 				report.qk=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
@@ -219,11 +220,21 @@ int esb_initialize(void)
 
 	struct esb_config config = ESB_DEFAULT_CONFIG;
 
-	config.protocol = ESB_PROTOCOL_ESB_DPL;
-	config.bitrate = ESB_BITRATE_2MBPS;
+	// config.protocol = ESB_PROTOCOL_ESB_DPL;
 	config.mode = ESB_MODE_PRX;
 	config.event_handler = event_handler;
+	config.bitrate = ESB_BITRATE_1MBPS;
+	// config.crc = ESB_CRC_16BIT;
+	config.tx_output_power = 8;
+	// config.retransmit_delay = 600;
+	// config.retransmit_count = 3;
+	// config.tx_mode = ESB_TXMODE_AUTO;
+	// config.payload_length = 32;
 	config.selective_auto_ack = true;
+
+	// Fast startup mode
+	NRF_RADIO->MODECNF0 |= RADIO_MODECNF0_RU_Fast << RADIO_MODECNF0_RU_Pos;
+	// nrf_radio_modecnf0_set(NRF_RADIO, true, 0);
 
 	err = esb_init(&config);
 	if (err) {
