@@ -155,7 +155,7 @@ void event_handler(struct esb_evt const *event)
 			} else {
 				report.imu_id=rx_payload.data[0];
 				report.battery=rx_payload.data[1];
-				report.battery=rx_payload.rssi;
+				//rx_payload.rssi;
 				report.qi=(((uint16_t)rx_payload.data[2] << 8) | rx_payload.data[3]);
 				report.qj=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
 				report.qk=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
@@ -223,7 +223,7 @@ int esb_initialize(void)
 	// config.protocol = ESB_PROTOCOL_ESB_DPL;
 	config.mode = ESB_MODE_PRX;
 	config.event_handler = event_handler;
-	config.bitrate = ESB_BITRATE_1MBPS;
+	// config.bitrate = ESB_BITRATE_2MBPS;
 	// config.crc = ESB_CRC_16BIT;
 	config.tx_output_power = 8;
 	// config.retransmit_delay = 600;
