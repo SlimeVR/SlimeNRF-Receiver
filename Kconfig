@@ -6,10 +6,6 @@
 
 source "Kconfig.zephyr"
 
-menu "Enhanced ShockBurst: Receiver"
-
-config ESB_PRX_APP_LOG_LEVEL
-	int "Log level for the ESB PRX sample"
-	default 4
+menu "SlimeNRF"
 
 endmenu
