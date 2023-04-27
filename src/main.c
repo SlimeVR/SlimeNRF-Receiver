@@ -47,7 +47,7 @@ static struct nvs_fs fs;
 #define FIXED_14_TO_DOUBLE(x) (((double)(x)) / (1 << 14))
 #define FIXED_10_TO_DOUBLE(x) (((double)(x)) / (1 << 10))
 
-LOG_MODULE_REGISTER(esb_prx, CONFIG_ESB_PRX_APP_LOG_LEVEL);
+LOG_MODULE_REGISTER(esb_prx, 4);
 
 static const struct gpio_dt_spec leds[] = {
 	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
@@ -74,6 +74,8 @@ static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_pair = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0);
+static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
+	0, 0, 0, 0);
 
 static int leds_init(void)
 {
@@ -136,23 +138,38 @@ static struct tracker_report {
 	.az = 0
 };;
 
+#include <nrfx_timer.h>
+static const nrfx_timer_t m_timer = NRFX_TIMER_INSTANCE(1);
+
 void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
 	case ESB_EVENT_TX_SUCCESS:
-		LOG_DBG("TX SUCCESS EVENT");
+		//LOG_DBG("TX SUCCESS EVENT");
 		break;
 	case ESB_EVENT_TX_FAILED:
 		LOG_DBG("TX FAILED EVENT");
 		break;
 	case ESB_EVENT_RX_RECEIVED:
+	// make tx payload for ack here
 		if (esb_read_rx_payload(&rx_payload) == 0) {
 			if (rx_payload.length == 8) {
 				LOG_INF("RX Pairing Packet");
 				for (int i = 0; i < 8; i++) {
 					pairing_buf[i] = rx_payload.data[i];
 				}
+				esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			} else {
+				uint32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL1);
+				uint8_t id = (rx_payload.data[0] >> 4) & 15;
+				tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
+				tx_payload_timer.data[1] = id;
+				tx_payload_timer.data[2] = (cc_timer >> 8) & 255;
+				tx_payload_timer.data[3] = cc_timer & 255;
+				//esb_write_payload(&tx_payload_timer);
+				// instead of making specific ack packet for all devices maybe instead have generic timestamp?
+				// or send same ack packet which contains all necessary data for every device?
+				// or use pipes and contain data for two devices, but you will need a bigger tx buffer..
 				report.imu_id=rx_payload.data[0];
 				report.battery=rx_payload.data[1];
 				//rx_payload.rssi;
@@ -309,10 +326,10 @@ static void send_report(struct k_work *work)
 			 */
 			LOG_ERR("Failed to submit report");
 		} else {
-			LOG_DBG("Report submitted");
+			//LOG_DBG("Report submitted");
 		}
 	} else {
-		LOG_DBG("HID IN endpoint busy");
+		//LOG_DBG("HID IN endpoint busy");
 	}
 }
 
@@ -398,6 +415,20 @@ static int composite_pre_init(const struct device *dev)
 }
 
 SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+
+void timer_init(void) {
+    nrfx_err_t err;
+    nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG;  
+	timer_cfg.frequency = NRF_TIMER_FREQ_1MHz;
+    //timer_cfg.mode = NRF_TIMER_MODE_TIMER;
+    //timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_16;
+    //timer_cfg.interrupt_priority = NRFX_TIMER_DEFAULT_CONFIG_IRQ_PRIORITY;
+    //timer_cfg.p_context = NULL;
+	nrfx_timer_init(&m_timer, &timer_cfg, NULL);
+    uint32_t ticks = nrfx_timer_ms_to_ticks(&m_timer, 3);
+    nrfx_timer_extended_compare(&m_timer, NRF_TIMER_CC_CHANNEL0, ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, false);
+    nrfx_timer_enable(&m_timer);
+}
 
 uint8_t reset_mode = 0;
 void main(void)
@@ -496,7 +527,7 @@ void main(void)
 			tx_payload_pair.data[1] = send_tracker_id; // Add tracker id to packet
 			//esb_flush_rx();
 			//esb_flush_tx();
-			esb_write_payload(&tx_payload_pair); // Add to TX buffer
+			//esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			k_msleep(500);
 		}
 	}
@@ -557,6 +588,9 @@ void main(void)
 
 	LOG_INF("Starting application");
 
+	tx_payload_timer.noack = true;
+
+    timer_init();
 	/* return to idle thread */
 	return;
 }
