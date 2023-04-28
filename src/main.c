@@ -75,7 +75,7 @@ static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
 static struct esb_payload tx_payload_pair = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
-	0, 0, 0, 0);
+	255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
 static int leds_init(void)
 {
@@ -160,13 +160,33 @@ void event_handler(struct esb_evt const *event)
 				}
 				esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			} else {
-				uint32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL1);
-				uint8_t id = (rx_payload.data[0] >> 4) & 15;
-				tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
-				tx_payload_timer.data[1] = id;
-				tx_payload_timer.data[2] = (cc_timer >> 8) & 255;
-				tx_payload_timer.data[3] = cc_timer & 255;
-				//esb_write_payload(&tx_payload_timer);
+//				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL1);
+//				uint8_t id = (rx_payload.data[0] >> 4) & 15;
+//				//tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
+//				//tx_payload_timer.data[1] = id;
+//				//tx_payload_timer.data[2] = (cc_timer >> 8) & 255;
+//				//tx_payload_timer.data[3] = cc_timer & 255;
+//				uint32_t length = nrfx_timer_ms_to_ticks(&m_timer, 3);
+//				int32_t offset = length * id / 16;
+//				if (id == 8) {
+//					offset = 2333;
+//				} else {
+//					offset = 667;
+//				}
+//				int32_t correction = (offset - cc_timer) / 2;
+//				LOG_INF("ID %u, Target %ld, Trigger %ld, Correction %ld", id, offset, cc_timer, correction);
+//				int8_t out;
+//				if (correction >= -64 && correction <= 64) {
+//					out = correction;
+//				} else if (correction > 0) {
+//					out = 64;
+//					out = correction / 32 + 62;
+//				} else {
+//					out = -64;
+//					out = correction / 32 - 62;
+//				}
+//				tx_payload_timer.data[id+1] = (uint8_t)out + 127;
+//				esb_write_payload(&tx_payload_timer);
 				// instead of making specific ack packet for all devices maybe instead have generic timestamp?
 				// or send same ack packet which contains all necessary data for every device?
 				// or use pipes and contain data for two devices, but you will need a bigger tx buffer..
@@ -281,7 +301,7 @@ static const struct device *hdev;
 static ATOMIC_DEFINE(hid_ep_in_busy, 1);
 
 #define HID_EP_BUSY_FLAG	0
-#define REPORT_PERIOD		K_SECONDS(2)
+#define REPORT_PERIOD		K_SECONDS(5)
 
 static void report_event_handler(struct k_timer *dummy);
 static K_TIMER_DEFINE(event_timer, report_event_handler, NULL);
