@@ -117,8 +117,11 @@ static void leds_update(uint8_t value)
 static struct k_work report_send;
 
 static struct tracker_report {
+	uint8_t type; //reserved
 	uint8_t imu_id;
+	uint8_t rssi;
 	uint8_t battery;
+	uint16_t batt_mV;
 	uint16_t qi;
 	uint16_t qj;
 	uint16_t qk;
@@ -127,8 +130,11 @@ static struct tracker_report {
 	uint16_t ay;
 	uint16_t az;
 } __packed report = {
+	.type = 0,
 	.imu_id = 0,
+	.rssi = 0,
 	.battery = 0,
+	.batt_mV = 0,
 	.qi = 0,
 	.qj = 0,
 	.qk = 0,
@@ -190,16 +196,18 @@ void event_handler(struct esb_evt const *event)
 				// instead of making specific ack packet for all devices maybe instead have generic timestamp?
 				// or send same ack packet which contains all necessary data for every device?
 				// or use pipes and contain data for two devices, but you will need a bigger tx buffer..
-				report.imu_id=rx_payload.data[0];
-				report.battery=rx_payload.data[1];
-				//rx_payload.rssi;
-				report.qi=(((uint16_t)rx_payload.data[2] << 8) | rx_payload.data[3]);
-				report.qj=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
-				report.qk=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
-				report.ql=(((uint16_t)rx_payload.data[8] << 8) | rx_payload.data[9]);
-				report.ax=(((uint16_t)rx_payload.data[10] << 8) | rx_payload.data[11]);
-				report.ay=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
-				report.az=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
+				//report.type=rx_payload.data[0]; // for later
+				report.imu_id=rx_payload.data[1];
+				report.battery=rx_payload.data[2];
+				report.batt_mV=((int)rx_payload.data[3] + 245) * 10;
+				report.rssi=rx_payload.rssi;
+				report.qi=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
+				report.qj=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
+				report.qk=(((uint16_t)rx_payload.data[8] << 8) | rx_payload.data[9]);
+				report.ql=(((uint16_t)rx_payload.data[10] << 8) | rx_payload.data[11]);
+				report.ax=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
+				report.ay=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
+				report.az=(((uint16_t)rx_payload.data[16] << 8) | rx_payload.data[17]);
 				k_work_submit(&report_send);
 			}
 		} else {
@@ -312,11 +320,14 @@ static const uint8_t hid_report_desc[] = {
 	HID_COLLECTION(HID_COLLECTION_APPLICATION),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
+		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
+		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 		HID_LOGICAL_MIN8(0),
 		HID_LOGICAL_MAX8(255),
 		HID_REPORT_SIZE(8),
-		HID_REPORT_COUNT(2),
+		HID_REPORT_COUNT(4),
 		HID_INPUT(0x02),
+		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
@@ -327,7 +338,7 @@ static const uint8_t hid_report_desc[] = {
 		HID_LOGICAL_MIN8(0),
 		HID_LOGICAL_MAX16(255, 255),
 		HID_REPORT_SIZE(16),
-		HID_REPORT_COUNT(7),
+		HID_REPORT_COUNT(8),
 		HID_INPUT(0x02),
 	HID_END_COLLECTION,
 };
