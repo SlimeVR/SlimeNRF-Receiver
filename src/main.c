@@ -76,6 +76,8 @@ static struct esb_payload tx_payload_pair = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
 	255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+static struct esb_payload tx_payload_sync = ESB_CREATE_PAYLOAD(0,
+	0, 0, 0, 0);
 
 static int leds_init(void)
 {
@@ -258,6 +260,51 @@ uint8_t discovery_addr_prefix[8] = {0xFE, 0xFF, 0x29, 0x27, 0x09, 0x02, 0xB2, 0x
 uint8_t base_addr_0[4] = {0,0,0,0};
 uint8_t base_addr_1[4] = {0,0,0,0};
 uint8_t addr_prefix[8] = {0,0,0,0,0,0,0,0};
+
+int esb_initialize_tx(void)
+{
+	int err;
+
+	struct esb_config config = ESB_DEFAULT_CONFIG;
+
+	// config.protocol = ESB_PROTOCOL_ESB_DPL;
+	// config.mode = ESB_MODE_PTX;
+	config.event_handler = event_handler;
+	// config.bitrate = ESB_BITRATE_2MBPS;
+	// config.crc = ESB_CRC_16BIT;
+	config.tx_output_power = 8;
+	// config.retransmit_delay = 600;
+	// config.retransmit_count = 3;
+	// config.tx_mode = ESB_TXMODE_AUTO;
+	// config.payload_length = 32;
+	config.selective_auto_ack = true;
+
+	// Fast startup mode
+	NRF_RADIO->MODECNF0 |= RADIO_MODECNF0_RU_Fast << RADIO_MODECNF0_RU_Pos;
+	// nrf_radio_modecnf0_set(NRF_RADIO, true, 0);
+
+	err = esb_init(&config);
+	if (err) {
+		return err;
+	}
+
+	err = esb_set_base_address_0(base_addr_0);
+	if (err) {
+		return err;
+	}
+
+	err = esb_set_base_address_1(base_addr_1);
+	if (err) {
+		return err;
+	}
+
+	err = esb_set_prefixes(addr_prefix, ARRAY_SIZE(addr_prefix));
+	if (err) {
+		return err;
+	}
+
+	return 0;
+}
 
 int esb_initialize(void)
 {
@@ -447,6 +494,20 @@ static int composite_pre_init(const struct device *dev)
 
 SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
+static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
+	if (event_type == NRF_TIMER_EVENT_COMPARE0) {
+		esb_write_payload(&tx_payload_sync);
+		//esb_start_tx();
+	} else if (event_type == NRF_TIMER_EVENT_COMPARE1) {
+		esb_disable();
+		esb_initialize_tx();
+	} else if (event_type == NRF_TIMER_EVENT_COMPARE2) {
+		esb_disable();
+		esb_initialize();
+		esb_start_rx();
+	}
+}
+
 void timer_init(void) {
     nrfx_err_t err;
     nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG;  
@@ -455,10 +516,14 @@ void timer_init(void) {
     //timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_16;
     //timer_cfg.interrupt_priority = NRFX_TIMER_DEFAULT_CONFIG_IRQ_PRIORITY;
     //timer_cfg.p_context = NULL;
-	nrfx_timer_init(&m_timer, &timer_cfg, NULL);
+	nrfx_timer_init(&m_timer, &timer_cfg, timer_handler);
     uint32_t ticks = nrfx_timer_ms_to_ticks(&m_timer, 3);
-    nrfx_timer_extended_compare(&m_timer, NRF_TIMER_CC_CHANNEL0, ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, false);
+    nrfx_timer_extended_compare(&m_timer, NRF_TIMER_CC_CHANNEL0, ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true); // timeslot to send sync
+    nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL1, ticks * 20 / 21, true); // switch to tx
+    nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL2, ticks * 1 / 21, true); // switch to rx
     nrfx_timer_enable(&m_timer);
+	IRQ_DIRECT_CONNECT(TIMER1_IRQn, 0, nrfx_timer_1_irq_handler, 0);
+	irq_enable(TIMER1_IRQn);
 }
 
 uint8_t reset_mode = 0;
@@ -620,6 +685,7 @@ void main(void)
 	LOG_INF("Starting application");
 
 	tx_payload_timer.noack = true;
+	tx_payload_sync.noack = true;
 
     timer_init();
 	/* return to idle thread */
