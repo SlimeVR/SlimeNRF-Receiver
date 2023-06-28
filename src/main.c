@@ -153,10 +153,8 @@ void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
 	case ESB_EVENT_TX_SUCCESS:
-		//LOG_DBG("TX SUCCESS EVENT");
 		break;
 	case ESB_EVENT_TX_FAILED:
-		LOG_DBG("TX FAILED EVENT");
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 	// make tx payload for ack here
@@ -169,7 +167,7 @@ void event_handler(struct esb_evt const *event)
 				esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			} else {
 				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL1);
-				uint8_t id = (rx_payload.data[0] >> 4) & 15;
+				uint8_t id = (rx_payload.data[1] >> 4) & 15;
 //				//tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
 //				//tx_payload_timer.data[1] = id;
 //				//tx_payload_timer.data[2] = (cc_timer >> 8) & 255;
@@ -497,7 +495,7 @@ SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 	if (event_type == NRF_TIMER_EVENT_COMPARE0) {
 		esb_write_payload(&tx_payload_sync);
-		//esb_start_tx();
+		esb_start_tx();
 	} else if (event_type == NRF_TIMER_EVENT_COMPARE1) {
 		esb_disable();
 		esb_initialize_tx();
