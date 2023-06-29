@@ -153,6 +153,7 @@ void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
 	case ESB_EVENT_TX_SUCCESS:
+		LOG_INF("TX SUCCESS");
 		break;
 	case ESB_EVENT_TX_FAILED:
 		break;
@@ -273,7 +274,7 @@ int esb_initialize_tx(void)
 	config.tx_output_power = 8;
 	// config.retransmit_delay = 600;
 	// config.retransmit_count = 3;
-	// config.tx_mode = ESB_TXMODE_AUTO;
+	config.tx_mode = ESB_TXMODE_MANUAL;
 	// config.payload_length = 32;
 	config.selective_auto_ack = true;
 
@@ -494,11 +495,12 @@ SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
 static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 	if (event_type == NRF_TIMER_EVENT_COMPARE0) {
-		esb_write_payload(&tx_payload_sync);
+		//esb_write_payload(&tx_payload_sync);
 		esb_start_tx();
 	} else if (event_type == NRF_TIMER_EVENT_COMPARE1) {
 		esb_disable();
 		esb_initialize_tx();
+		esb_write_payload(&tx_payload_sync);
 	} else if (event_type == NRF_TIMER_EVENT_COMPARE2) {
 		esb_disable();
 		esb_initialize();
