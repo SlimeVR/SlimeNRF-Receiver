@@ -153,12 +153,13 @@ void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
 	case ESB_EVENT_TX_SUCCESS:
-		LOG_INF("TX SUCCESS");
+		//LOG_DBG("TX SUCCESS");
 		break;
 	case ESB_EVENT_TX_FAILED:
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 	// make tx payload for ack here
+		LOG_INF("RX");
 		if (esb_read_rx_payload(&rx_payload) == 0) {
 			if (rx_payload.length == 8) {
 				LOG_INF("RX Pairing Packet");
@@ -498,6 +499,7 @@ static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 		//esb_write_payload(&tx_payload_sync);
 		esb_start_tx();
 	} else if (event_type == NRF_TIMER_EVENT_COMPARE1) {
+		esb_stop_rx();
 		esb_disable();
 		esb_initialize_tx();
 		esb_write_payload(&tx_payload_sync);
@@ -520,7 +522,7 @@ void timer_init(void) {
     uint32_t ticks = nrfx_timer_ms_to_ticks(&m_timer, 3);
     nrfx_timer_extended_compare(&m_timer, NRF_TIMER_CC_CHANNEL0, ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true); // timeslot to send sync
     nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL1, ticks * 20 / 21, true); // switch to tx
-    nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL2, ticks * 1 / 21, true); // switch to rx
+    nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL2, ticks * 6 / 21, true); // switch to rx
     nrfx_timer_enable(&m_timer);
 	IRQ_DIRECT_CONNECT(TIMER1_IRQn, 0, nrfx_timer_1_irq_handler, 0);
 	irq_enable(TIMER1_IRQn);
