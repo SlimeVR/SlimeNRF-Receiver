@@ -159,7 +159,6 @@ void event_handler(struct esb_evt const *event)
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 	// make tx payload for ack here
-		LOG_INF("RX");
 		if (esb_read_rx_payload(&rx_payload) == 0) {
 			if (rx_payload.length == 8) {
 				LOG_INF("RX Pairing Packet");
@@ -168,8 +167,8 @@ void event_handler(struct esb_evt const *event)
 				}
 				esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			} else {
-				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL1);
-				uint8_t id = (rx_payload.data[1] >> 4) & 15;
+//				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL3);
+//				uint8_t id = (rx_payload.data[1] >> 4) & 15;
 //				//tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
 //				//tx_payload_timer.data[1] = id;
 //				//tx_payload_timer.data[2] = (cc_timer >> 8) & 255;
@@ -182,7 +181,7 @@ void event_handler(struct esb_evt const *event)
 //					offset = 667;
 //				}
 //				int32_t correction = (offset - cc_timer) / 2;
-				LOG_INF("ID %u, Trigger %ld", id, cc_timer);
+//				LOG_INF("ID %u, Trigger %ld", id, cc_timer);
 //				int8_t out;
 //				if (correction >= -64 && correction <= 64) {
 //					out = correction;
