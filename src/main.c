@@ -521,7 +521,7 @@ void timer_init(void) {
     uint32_t ticks = nrfx_timer_ms_to_ticks(&m_timer, 3);
     nrfx_timer_extended_compare(&m_timer, NRF_TIMER_CC_CHANNEL0, ticks, NRF_TIMER_SHORT_COMPARE0_CLEAR_MASK, true); // timeslot to send sync
     nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL1, ticks * 20 / 21, true); // switch to tx
-    nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL2, ticks * 6 / 21, true); // switch to rx
+    nrfx_timer_compare(&m_timer, NRF_TIMER_CC_CHANNEL2, ticks * 1 / 21, true); // switch to rx
     nrfx_timer_enable(&m_timer);
 	IRQ_DIRECT_CONNECT(TIMER1_IRQn, 0, nrfx_timer_1_irq_handler, 0);
 	irq_enable(TIMER1_IRQn);
