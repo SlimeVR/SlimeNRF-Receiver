@@ -75,7 +75,7 @@ static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
 static struct esb_payload tx_payload_pair = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
-	255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_sync = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0);
 
@@ -146,6 +146,9 @@ static struct tracker_report {
 	.az = 0
 };;
 
+uint8_t reports[256*sizeof(report)];
+uint8_t report_count = 0;
+
 #include <nrfx_timer.h>
 static const nrfx_timer_t m_timer = NRFX_TIMER_INSTANCE(1);
 
@@ -209,6 +212,8 @@ void event_handler(struct esb_evt const *event)
 				report.ax=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
 				report.ay=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
 				report.az=(((uint16_t)rx_payload.data[16] << 8) | rx_payload.data[17]);
+				memcpy(&reports[sizeof(report) * report_count], &report.type, sizeof(report));
+				report_count++;
 				k_work_submit(&report_send);
 			}
 		} else {
@@ -394,8 +399,12 @@ static void send_report(struct k_work *work)
 	int ret, wrote;
 
 	if (!atomic_test_and_set_bit(hid_ep_in_busy, HID_EP_BUSY_FLAG)) {
-		ret = hid_int_ep_write(hdev, (uint8_t *)&report,
-				       sizeof(report), &wrote);
+//		ret = hid_int_ep_write(hdev, &reports[0], sizeof(report) * report_count, &wrote);
+		ret = hid_int_ep_write(hdev, &reports[0], sizeof(report), &wrote);
+		if (report_count > 1) {
+			LOG_INF("left %u reports on the table", report_count -1);
+		}
+		report_count = 0;
 		if (ret != 0) {
 			/*
 			 * Do nothing and wait until host has reset the device
@@ -406,7 +415,7 @@ static void send_report(struct k_work *work)
 			//LOG_DBG("Report submitted");
 		}
 	} else {
-		//LOG_DBG("HID IN endpoint busy");
+		LOG_DBG("HID IN endpoint busy");
 	}
 }
 
@@ -493,6 +502,8 @@ static int composite_pre_init(const struct device *dev)
 
 SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
+uint16_t led_clock = 0;
+
 static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 	if (event_type == NRF_TIMER_EVENT_COMPARE0) {
 		//esb_write_payload(&tx_payload_sync);
@@ -506,6 +517,10 @@ static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 		esb_disable();
 		esb_initialize();
 		esb_start_rx();
+		led_clock++;
+		led_clock%=17*600/3;
+		tx_payload_sync.data[0]=(led_clock >> 8) & 255;
+		tx_payload_sync.data[1]=led_clock & 255;
 	}
 }
 
