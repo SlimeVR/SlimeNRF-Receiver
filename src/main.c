@@ -787,7 +787,7 @@ int main(void)
 	tx_payload_timer.noack = true;
 	tx_payload_sync.noack = true;
 
-	timer_init();
+	//timer_init();
 
 	memset(discovered_trackers, 0, sizeof(discovered_trackers));
 
