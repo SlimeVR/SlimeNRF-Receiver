@@ -704,7 +704,7 @@ int main(void)
 	tx_payload_timer.noack = true;
 	tx_payload_sync.noack = true;
 
-	timer_init();
+	//timer_init();
 
 	for (int i = 0; i < 256; i++) {
 		discovered_trackers[i] = 0;
