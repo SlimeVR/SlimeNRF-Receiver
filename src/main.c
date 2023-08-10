@@ -703,7 +703,7 @@ void main(void)
 	tx_payload_timer.noack = true;
 	tx_payload_sync.noack = true;
 
-    timer_init();
+    //timer_init();
 	/* return to idle thread */
 	return;
 }
