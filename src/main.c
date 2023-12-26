@@ -533,8 +533,8 @@ static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 
 void timer_init(void) {
     nrfx_err_t err;
-    nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG;  
-	timer_cfg.frequency = NRF_TIMER_FREQ_1MHz;
+	nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG(1000000);
+	//timer_cfg.frequency = NRF_TIMER_FREQ_1MHz;
     //timer_cfg.mode = NRF_TIMER_MODE_TIMER;
     //timer_cfg.bit_width = NRF_TIMER_BIT_WIDTH_16;
     //timer_cfg.interrupt_priority = NRFX_TIMER_DEFAULT_CONFIG_IRQ_PRIORITY;
