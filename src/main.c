@@ -67,6 +67,8 @@ BUILD_ASSERT(DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
 uint8_t stored_trackers = 0;
 uint64_t stored_tracker_addr[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 
+uint8_t discovered_trackers[256];
+
 uint8_t pairing_buf[8] = {0,0,0,0,0,0,0,0};
 
 static struct esb_payload rx_payload;
@@ -201,7 +203,12 @@ void event_handler(struct esb_evt const *event)
 				// or send same ack packet which contains all necessary data for every device?
 				// or use pipes and contain data for two devices, but you will need a bigger tx buffer..
 				//report.type=rx_payload.data[0]; // for later
-				report.imu_id=rx_payload.data[1];
+				uint8_t imu_id = rx_payload.data[1];
+				if (discovered_trackers[imu_id] < 16) { // garbage filtering of nonexistant tracker
+					discovered_trackers[imu_id]++;
+					break;
+				}
+				report.imu_id=imu_id;
 				report.battery=rx_payload.data[2];
 				report.batt_mV=((int)rx_payload.data[3] + 245) * 10;
 				report.rssi=rx_payload.rssi;
@@ -704,6 +711,19 @@ void main(void)
 	tx_payload_sync.noack = true;
 
     timer_init();
+	for (int i = 0; i < 256; i++) {
+		discovered_trackers[i] = 0;
+	}
+
+	while (true) { // this should be a timer but lazy; reset count if its not above threshold
+		k_msleep(1000);
+		for (int i = 0; i < 256; i++) {
+			if (discovered_trackers[i] < 16) {
+				discovered_trackers[i] = 0;
+			}
+		}
+	}
+
 	/* return to idle thread */
 	return;
 }
