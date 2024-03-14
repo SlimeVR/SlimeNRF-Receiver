@@ -484,7 +484,7 @@ static void status_cb(enum usb_dc_status_code status, const uint8_t *param)
 	}
 }
 
-static int composite_pre_init(const struct device *dev)
+static int composite_pre_init()
 {
 	hdev = device_get_binding("HID_0");
 	if (hdev == NULL) {
@@ -532,7 +532,7 @@ static void timer_handler(nrf_timer_event_t event_type, void *p_context) {
 }
 
 void timer_init(void) {
-    nrfx_err_t err;
+    //nrfx_err_t err;
 	nrfx_timer_config_t timer_cfg = NRFX_TIMER_DEFAULT_CONFIG(1000000);
 	//timer_cfg.frequency = NRF_TIMER_FREQ_1MHz;
     //timer_cfg.mode = NRF_TIMER_MODE_TIMER;
@@ -550,7 +550,7 @@ void timer_init(void) {
 }
 
 uint8_t reset_mode = 0;
-void main(void)
+int main(void)
 {
 	int32_t reset_reason = NRF_POWER->RESETREAS;
 	NRF_POWER->RESETREAS = NRF_POWER->RESETREAS; // Clear RESETREAS
@@ -684,13 +684,13 @@ void main(void)
 
 	err = leds_init();
 	if (err) {
-		return;
+		return 0;
 	}
 
 	err = esb_initialize();
 	if (err) {
 		LOG_ERR("ESB initialization failed, err %d", err);
-		return;
+		return 0;
 	}
 
 	LOG_INF("Initialization complete");
@@ -700,10 +700,8 @@ void main(void)
 	err = esb_start_rx();
 	if (err) {
 		LOG_ERR("RX setup failed, err %d", err);
-		return;
+		return 0;
 	}
-
-	int ret;
 
 	LOG_INF("Starting application");
 
@@ -725,5 +723,5 @@ void main(void)
 	}
 
 	/* return to idle thread */
-	return;
+	return 0;
 }
