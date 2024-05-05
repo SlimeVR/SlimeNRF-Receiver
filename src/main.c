@@ -49,21 +49,6 @@ static struct nvs_fs fs;
 
 LOG_MODULE_REGISTER(esb_prx, 4);
 
-static const struct gpio_dt_spec leds[] = {
-	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
-	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
-	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
-	GPIO_DT_SPEC_GET(DT_ALIAS(led3), gpios),
-};
-
-BUILD_ASSERT(DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
-			  DT_GPIO_CTLR(DT_ALIAS(led1), gpios)) &&
-	     DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
-			  DT_GPIO_CTLR(DT_ALIAS(led2), gpios)) &&
-	     DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
-			  DT_GPIO_CTLR(DT_ALIAS(led3), gpios)),
-	     "All LEDs must be on the same port");
-
 uint8_t stored_trackers = 0;
 uint64_t stored_tracker_addr[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 
@@ -80,43 +65,6 @@ static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_sync = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0);
-
-static int leds_init(void)
-{
-	if (!device_is_ready(leds[0].port)) {
-		LOG_ERR("LEDs port not ready");
-		return -ENODEV;
-	}
-
-	for (size_t i = 0; i < ARRAY_SIZE(leds); i++) {
-		int err = gpio_pin_configure_dt(&leds[i], GPIO_OUTPUT);
-
-		if (err) {
-			LOG_ERR("Unable to configure LED%u, err %d.", i, err);
-			return err;
-		}
-	}
-
-	return 0;
-}
-
-static void leds_update(uint8_t value)
-{
-	bool led0_status = !(value % 8 > 0 && value % 8 <= 4);
-	bool led1_status = !(value % 8 > 1 && value % 8 <= 5);
-	bool led2_status = !(value % 8 > 2 && value % 8 <= 6);
-	bool led3_status = !(value % 8 > 3);
-
-	gpio_port_pins_t mask = BIT(leds[0].pin) | BIT(leds[1].pin) |
-				BIT(leds[2].pin) | BIT(leds[3].pin);
-
-	gpio_port_value_t val = led0_status << leds[0].pin |
-				led1_status << leds[1].pin |
-				led2_status << leds[2].pin |
-				led3_status << leds[3].pin;
-
-	gpio_port_set_masked_raw(leds[0].port, mask, val);
-}
 
 static struct k_work report_send;
 
@@ -150,6 +98,7 @@ static struct tracker_report {
 
 uint8_t reports[256*sizeof(report)];
 uint8_t report_count = 0;
+uint8_t report_sent = 0;
 
 #include <nrfx_timer.h>
 static const nrfx_timer_t m_timer = NRFX_TIMER_INSTANCE(1);
@@ -219,7 +168,15 @@ void event_handler(struct esb_evt const *event)
 				report.ax=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
 				report.ay=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
 				report.az=(((uint16_t)rx_payload.data[16] << 8) | rx_payload.data[17]);
-				memcpy(&reports[sizeof(report) * report_count], &report.type, sizeof(report));
+				// TODO: this sucks
+				for (int i = 0; i < report_count; i++) { // replace existing entry instead
+					if (reports[sizeof(report) * (report_sent+i) + 1] == imu_id) {
+						memcpy(&reports[sizeof(report) * (report_sent+i)], &report, sizeof(report));
+						k_work_submit(&report_send);
+						break;
+					}
+				}
+				memcpy(&reports[sizeof(report) * (report_sent+report_count)], &report, sizeof(report));
 				report_count++;
 				k_work_submit(&report_send);
 			}
@@ -377,40 +334,28 @@ static const uint8_t hid_report_desc[] = {
 	HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 	HID_COLLECTION(HID_COLLECTION_APPLICATION),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_LOGICAL_MIN8(0),
-		HID_LOGICAL_MAX8(255),
 		HID_REPORT_SIZE(8),
-		HID_REPORT_COUNT(4),
-		HID_INPUT(0x02),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
-		HID_LOGICAL_MIN8(0),
-		HID_LOGICAL_MAX16(255, 255),
-		HID_REPORT_SIZE(16),
-		HID_REPORT_COUNT(8),
+		HID_REPORT_COUNT(60),
 		HID_INPUT(0x02),
 	HID_END_COLLECTION,
 };
 
 static void send_report(struct k_work *work)
 {
+	if (report_count == 0) return;
 	int ret, wrote;
 
 	if (!atomic_test_and_set_bit(hid_ep_in_busy, HID_EP_BUSY_FLAG)) {
-//		ret = hid_int_ep_write(hdev, &reports[0], sizeof(report) * report_count, &wrote);
-		ret = hid_int_ep_write(hdev, &reports[0], sizeof(report), &wrote);
-		if (report_count > 1) {
-			LOG_INF("left %u reports on the table", report_count -1);
+		// TODO: this really sucks, how can i send as much or as little as i want instead??
+		for (int i = report_count; i < 3; i++) memcpy(&reports[sizeof(report) * (report_sent+i)], &reports[sizeof(report) * report_sent], sizeof(report)); // just duplicate first entry a bunch, this will definitely cause problems
+//		ret = hid_int_ep_write(hdev, &reports, sizeof(report) * report_count, &wrote);
+		ret = hid_int_ep_write(hdev, &reports[sizeof(report) * report_sent], sizeof(report) * 3, &wrote);
+		if (report_count > 3) {
+			LOG_INF("left %u reports on the table", report_count - 3);
 		}
+		report_sent += report_count;
+		report_sent += 2;
+		if (report_sent > 128) report_sent = 0; // an attempt to make ringbuffer so the ep isnt reading the same bits as trackers write to
 		report_count = 0;
 		if (ret != 0) {
 			/*
@@ -421,8 +366,8 @@ static void send_report(struct k_work *work)
 		} else {
 			//LOG_DBG("Report submitted");
 		}
-	} else {
-		LOG_DBG("HID IN endpoint busy");
+	} else { // busy with what
+		//LOG_DBG("HID IN endpoint busy");
 	}
 }
 
@@ -447,8 +392,6 @@ static void on_idle_cb(const struct device *dev, uint16_t report_id)
 
 static void report_event_handler(struct k_timer *dummy)
 {
-	/* Increment reported data */
-	//report_1.value++;
 	k_work_submit(&report_send);
 }
 
@@ -556,6 +499,7 @@ int main(void)
 	NRF_POWER->RESETREAS = NRF_POWER->RESETREAS; // Clear RESETREAS
 	uint8_t reboot_counter = 0;
 
+	// TODO: change pin reset to using memory, so there is less delay between resets
 	struct flash_pages_info info;
 	fs.flash_device = NVS_PARTITION_DEVICE;
 	fs.offset = NVS_PARTITION_OFFSET; // Start NVS FS here
@@ -682,11 +626,6 @@ int main(void)
 
 	LOG_INF("Enhanced ShockBurst prx sample");
 
-	err = leds_init();
-	if (err) {
-		return 0;
-	}
-
 	err = esb_initialize();
 	if (err) {
 		LOG_ERR("ESB initialization failed, err %d", err);
@@ -695,7 +634,7 @@ int main(void)
 
 	LOG_INF("Initialization complete");
 
-	LOG_INF("Setting up for packet receiption");
+	LOG_INF("Setting up for packet reception");
 
 	err = esb_start_rx();
 	if (err) {
