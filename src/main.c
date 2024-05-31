@@ -517,29 +517,22 @@ int main(void)
 	fs.sector_count = 4U; // 4 sectors
 	nvs_mount(&fs);
 
-	clocks_start();
-
 	int64_t time_begin = k_uptime_get();
 	if (reset_reason & 0x01) { // Count pin resets
 		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 		reset_mode = reboot_counter;
 		reboot_counter++;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
-	}
-
-	usb_enable(status_cb);
-
-	k_work_init(&report_send, send_report);
-
-	if (reset_reason & 0x01) { // Count pin resets
-		int64_t delta = time_begin + 1000 - k_uptime_get();
-		if (delta > 0)
-			k_msleep(delta); // Wait before clearing counter and continuing
+		k_msleep(1000); // Wait before clearing counter and continuing
 		reboot_counter = 0;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 	}
 
 	gpio_pin_set_dt(&led, 0);
+
+	usb_enable(status_cb);
+
+	k_work_init(&report_send, send_report);
 
 	if (reset_mode == 2) { // Clear stored data
 		reset_mode = 1; // Enter pairing mode
@@ -555,6 +548,8 @@ int main(void)
 		}
 		LOG_INF("%d devices stored", stored_trackers);
 	}
+
+	clocks_start();
 
 	if (stored_trackers == 0 || reset_mode == 1) { // Pairing mode
 		reset_mode = 0;
