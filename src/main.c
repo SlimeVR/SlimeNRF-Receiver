@@ -519,16 +519,22 @@ int main(void)
 
 	clocks_start();
 
-	usb_enable(status_cb);
-
-	k_work_init(&report_send, send_report);
-
+	int64_t time_begin = k_uptime_get();
 	if (reset_reason & 0x01) { // Count pin resets
 		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 		reset_mode = reboot_counter;
 		reboot_counter++;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
-		k_msleep(1000); // Wait before clearing counter and continuing
+	}
+
+	usb_enable(status_cb);
+
+	k_work_init(&report_send, send_report);
+
+	if (reset_reason & 0x01) { // Count pin resets
+		int64_t delta = time_begin + 1000 - k_uptime_get();
+		if (delta > 0)
+			k_msleep(delta); // Wait before clearing counter and continuing
 		reboot_counter = 0;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 	}
