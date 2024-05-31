@@ -104,6 +104,8 @@ uint8_t reports[256*sizeof(report)];
 uint8_t report_count = 0;
 uint8_t report_sent = 0;
 
+int blink = 0;
+
 #include <nrfx_timer.h>
 static const nrfx_timer_t m_timer = NRFX_TIMER_INSTANCE(1);
 
@@ -600,11 +602,16 @@ int main(void)
 			//esb_flush_rx();
 			//esb_flush_tx();
 			//esb_write_payload(&tx_payload_pair); // Add to TX buffer
-			//k_msleep(500);
-			gpio_pin_set_dt(&led, 1);
-			k_msleep(100);
-			gpio_pin_set_dt(&led, 0);
-			k_msleep(400);
+			if (blink == 0) {
+				gpio_pin_set_dt(&led, 1);
+				k_msleep(100);
+				gpio_pin_set_dt(&led, 0);
+				k_msleep(400);
+			}
+			else
+				k_msleep(500);
+			blink++;
+			blink %= 2;
 		}
 	}
 
@@ -666,11 +673,16 @@ int main(void)
 	}
 
 	while (true) { // this should be a timer but lazy; reset count if its not above threshold
-		//k_msleep(1000);
-		gpio_pin_set_dt(&led, 1);
-		k_msleep(100);
-		gpio_pin_set_dt(&led, 0);
-		k_msleep(900);
+		if (blink == 0) {
+			gpio_pin_set_dt(&led, 1);
+			k_msleep(300);
+			gpio_pin_set_dt(&led, 0);
+			k_msleep(700);
+		}
+		else
+			k_msleep(1000);
+		blink++;
+		blink %= 10;
 		for (int i = 0; i < 256; i++) {
 			if (discovered_trackers[i] < 16) {
 				discovered_trackers[i] = 0;
