@@ -13,6 +13,10 @@
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
 	};
+
+	zephyr,user {
+		led-gpios = <&gpio0 15 GPIO_OPEN_SOURCE>;
+	};
 };
 
 &flash0 {
@@ -45,5 +49,13 @@
 };
 
 &usbd {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpiote {
 	status = "okay";
 };

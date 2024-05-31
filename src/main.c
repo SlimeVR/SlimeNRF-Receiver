@@ -38,6 +38,8 @@ static struct nvs_fs fs;
 #define STORED_ADDR_0 3
 // 0-15 -> id 3-18
 
+#define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
+
 #define pi 3.141592653589793238462643383279502884f
 
 #define INT16_TO_UINT16(x) ((uint16_t)32768 + (uint16_t)(x))
@@ -65,6 +67,8 @@ static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 static struct esb_payload tx_payload_sync = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0);
+
+const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, led_gpios);
 
 static struct k_work report_send;
 
@@ -499,6 +503,9 @@ int main(void)
 	NRF_POWER->RESETREAS = NRF_POWER->RESETREAS; // Clear RESETREAS
 	uint8_t reboot_counter = 0;
 
+	gpio_pin_configure_dt(&led, GPIO_OUTPUT);
+	gpio_pin_set_dt(&led, 1); // Boot LED
+
 	// TODO: change pin reset to using memory, so there is less delay between resets
 	struct flash_pages_info info;
 	fs.flash_device = NVS_PARTITION_DEVICE;
@@ -523,6 +530,8 @@ int main(void)
 		reboot_counter = 0;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 	}
+
+	gpio_pin_set_dt(&led, 0);
 
 	if (reset_mode == 2) { // Clear stored data
 		reset_mode = 1; // Enter pairing mode
@@ -591,7 +600,11 @@ int main(void)
 			//esb_flush_rx();
 			//esb_flush_tx();
 			//esb_write_payload(&tx_payload_pair); // Add to TX buffer
-			k_msleep(500);
+			//k_msleep(500);
+			gpio_pin_set_dt(&led, 1);
+			k_msleep(100);
+			gpio_pin_set_dt(&led, 0);
+			k_msleep(400);
 		}
 	}
 
@@ -653,7 +666,11 @@ int main(void)
 	}
 
 	while (true) { // this should be a timer but lazy; reset count if its not above threshold
-		k_msleep(1000);
+		//k_msleep(1000);
+		gpio_pin_set_dt(&led, 1);
+		k_msleep(100);
+		gpio_pin_set_dt(&led, 0);
+		k_msleep(900);
 		for (int i = 0; i < 256; i++) {
 			if (discovered_trackers[i] < 16) {
 				discovered_trackers[i] = 0;
