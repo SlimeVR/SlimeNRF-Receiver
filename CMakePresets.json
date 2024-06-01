@@ -1,0 +1,59 @@
+{
+    "version": 2,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20
+    },
+    "configurePresets": [
+        {
+            "name": "build",
+            "displayName": "Build for nRF52840 DK NRF52840",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "NCS_TOOLCHAIN_VERSION": "NONE",
+                "BOARD": "nrf52840dk_nrf52840",
+                "BOARD_ROOT": "${sourceDir}/;${sourceParentDir}/central;${sourceParentDir}/peripheral",
+                "CACHED_CONF_FILE": "${sourceDir}/prj.conf",
+                "DTC_OVERLAY_FILE": "${sourceDir}/boards/arm/nrf52840dk_nrf52840.overlay"
+            }
+        },
+        {
+            "name": "build_1",
+            "displayName": "Build for supermini",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build_1",
+            "cacheVariables": {
+                "NCS_TOOLCHAIN_VERSION": "NONE",
+                "BOARD": "supermini",
+                "BOARD_ROOT": "${sourceDir}/",
+                "CACHED_CONF_FILE": "${sourceDir}/prj.conf"
+            }
+        },
+        {
+            "name": "build_2",
+            "displayName": "Build for etee_dongle",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build_2",
+            "cacheVariables": {
+                "NCS_TOOLCHAIN_VERSION": "NONE",
+                "BOARD": "etee_dongle",
+                "BOARD_ROOT": "${sourceDir}/",
+                "CACHED_CONF_FILE": "${sourceDir}/prj.conf"
+            }
+        },
+        {
+            "name": "build_3",
+            "displayName": "Build for nRF52840 Dongle NRF52840",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build_3",
+            "cacheVariables": {
+                "NCS_TOOLCHAIN_VERSION": "NONE",
+                "BOARD": "nrf52840dongle_nrf52840",
+                "BOARD_ROOT": "${sourceDir}/",
+                "CACHED_CONF_FILE": "${sourceDir}/prj.conf",
+                "DTC_OVERLAY_FILE": "${sourceDir}/boards/arm/nrf52840dongle_nrf52840.overlay"
+            }
+        }
+    ]
+}
