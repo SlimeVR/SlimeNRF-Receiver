@@ -3,4 +3,5 @@
 
 config BOARD_NRF52840_DK_NRF52840
 	bool "nrf52840-dk_nrf52840"
+	select SOC_DCDC_NRF52X
 	depends on SOC_NRF52840_QIAA
