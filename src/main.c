@@ -23,6 +23,11 @@
 
 #include <zephyr/sys/reboot.h>
 
+#define DFU_DBL_RESET_MEM 0x20007F7C
+#define DFU_DBL_RESET_APP 0x4ee5677e
+
+uint32_t* dbl_reset_mem = ((uint32_t*) DFU_DBL_RESET_MEM);
+
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/fs/nvs.h>
@@ -520,7 +525,7 @@ int main(void)
 	nvs_mount(&fs);
 
 	#if CONFIG_BOARD_SUPERMINI|CONFIG_BOARD_ETEE_DONGLE // Using Adafruit bootloader
-	(*((uint32_t*) 0x20007F7C)) = 0x4ee5677e; // DFU_DBL_RESET_MEM = DFU_DBL_RESET_APP, Skip DFU
+	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
 	#endif
 
 	int64_t time_begin = k_uptime_get();
