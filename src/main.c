@@ -21,6 +21,8 @@
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/class/usb_hid.h>
 
+#include <zephyr/sys/reboot.h>
+
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/fs/nvs.h>
@@ -517,6 +519,10 @@ int main(void)
 	fs.sector_count = 4U; // 4 sectors
 	nvs_mount(&fs);
 
+	#if CONFIG_BOARD_SUPERMINI|CONFIG_BOARD_ETEE_DONGLE // Using Adafruit bootloader
+	(*((uint32_t*) 0x20007F7C)) = 0x4ee5677e; // DFU_DBL_RESET_MEM = DFU_DBL_RESET_APP, Skip DFU
+	#endif
+
 	int64_t time_begin = k_uptime_get();
 	if (reset_reason & 0x01) { // Count pin resets
 		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
@@ -527,12 +533,6 @@ int main(void)
 		reboot_counter = 0;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 	}
-
-	gpio_pin_set_dt(&led, 0);
-
-	usb_enable(status_cb);
-
-	k_work_init(&report_send, send_report);
 
 	if (reset_mode == 2) { // Clear stored data
 		reset_mode = 1; // Enter pairing mode
@@ -548,6 +548,19 @@ int main(void)
 		}
 		LOG_INF("%d devices stored", stored_trackers);
 	}
+
+	#if CONFIG_BOARD_SUPERMINI|CONFIG_BOARD_ETEE_DONGLE // Using Adafruit bootloader
+	if (reset_mode >= 3) { // DFU_MAGIC_UF2_RESET, Reset mode DFU
+		NRF_POWER->GPREGRET = 0x57;
+		sys_reboot(SYS_REBOOT_COLD);
+	}
+	#endif
+
+	gpio_pin_set_dt(&led, 0);
+
+	usb_enable(status_cb);
+
+	k_work_init(&report_send, send_report);
 
 	clocks_start();
 
