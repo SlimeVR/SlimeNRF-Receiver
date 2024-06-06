@@ -75,7 +75,8 @@ static struct esb_payload tx_payload_timer = ESB_CREATE_PAYLOAD(0,
 static struct esb_payload tx_payload_sync = ESB_CREATE_PAYLOAD(0,
 	0, 0, 0, 0);
 
-const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(ZEPHYR_USER_NODE, led_gpios);
+const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET_OR(DT_ALIAS(led0), gpios, {0});
+const struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(ZEPHYR_USER_NODE, led_gpios, led0);
 
 static struct k_work report_send;
 
@@ -505,6 +506,12 @@ void timer_init(void) {
 	irq_enable(TIMER1_IRQn);
 }
 
+static struct gpio_callback button_cb_data;
+void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+	sys_reboot(SYS_REBOOT_COLD); // treat like pin reset but without pin reset reason
+}
+
 uint8_t reset_mode = 0;
 int main(void)
 {
@@ -528,7 +535,15 @@ int main(void)
 	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
 	#endif
 
-	int64_t time_begin = k_uptime_get();
+	// Alternate button if available to use as "reset key"
+	const struct gpio_dt_spec button0 = GPIO_DT_SPEC_GET_OR(DT_ALIAS(sw0), gpios, {0});
+	gpio_pin_configure_dt(&button0, GPIO_INPUT);
+	reset_reason |= gpio_pin_get_dt(&button0);
+	gpio_pin_interrupt_configure_dt(&button0, GPIO_INT_EDGE_TO_ACTIVE);
+	gpio_init_callback(&button_cb_data, button_pressed, BIT(button0.pin));
+	gpio_add_callback(button0.port, &button_cb_data);
+
+	//int64_t time_begin = k_uptime_get();
 	if (reset_reason & 0x01) { // Count pin resets
 		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 		reset_mode = reboot_counter;

@@ -1,6 +1,0 @@
-
-/ {
-	zephyr,user {
-		led-gpios = <&gpio0 6 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
-	};
-};

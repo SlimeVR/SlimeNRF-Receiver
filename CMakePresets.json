@@ -14,8 +14,7 @@
                 "NCS_TOOLCHAIN_VERSION": "NONE",
                 "BOARD": "nrf52840dk_nrf52840",
                 "BOARD_ROOT": "${sourceDir}/;${sourceParentDir}/central;${sourceParentDir}/peripheral",
-                "CACHED_CONF_FILE": "${sourceDir}/prj.conf",
-                "DTC_OVERLAY_FILE": "${sourceDir}/boards/arm/nrf52840dk_nrf52840.overlay"
+                "CACHED_CONF_FILE": "${sourceDir}/prj.conf"
             }
         },
         {
@@ -51,8 +50,7 @@
                 "NCS_TOOLCHAIN_VERSION": "NONE",
                 "BOARD": "nrf52840dongle_nrf52840",
                 "BOARD_ROOT": "${sourceDir}/",
-                "CACHED_CONF_FILE": "${sourceDir}/prj.conf",
-                "DTC_OVERLAY_FILE": "${sourceDir}/boards/arm/nrf52840dongle_nrf52840.overlay"
+                "CACHED_CONF_FILE": "${sourceDir}/prj.conf"
             }
         }
     ]
