@@ -56,7 +56,7 @@ static struct nvs_fs fs;
 #define FIXED_14_TO_DOUBLE(x) (((double)(x)) / (1 << 14))
 #define FIXED_10_TO_DOUBLE(x) (((double)(x)) / (1 << 10))
 
-LOG_MODULE_REGISTER(esb_prx, 4);
+LOG_MODULE_REGISTER(esb_prx, LOG_LEVEL_INF);
 
 uint8_t stored_trackers = 0;
 uint64_t stored_tracker_addr[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -135,6 +135,9 @@ void event_handler(struct esb_evt const *event)
 				}
 				esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			} else {
+				LOG_DBG("RX: %02X %02X %02X %02X", tx_payload_pair.data[0], tx_payload_pair.data[1], tx_payload_pair.data[2], tx_payload_pair.data[3]);
+				LOG_DBG("    %02X%02X %02X%02X %02X%02X %02X%02X", tx_payload_pair.data[4], tx_payload_pair.data[5], tx_payload_pair.data[6], tx_payload_pair.data[7], tx_payload_pair.data[8], tx_payload_pair.data[9], tx_payload_pair.data[10], tx_payload_pair.data[11]);
+				LOG_DBG("    %02X%02X %02X%02X %02X%02X", tx_payload_pair.data[12], tx_payload_pair.data[13], tx_payload_pair.data[14], tx_payload_pair.data[15], tx_payload_pair.data[16], tx_payload_pair.data[17]);
 //				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL3);
 //				uint8_t id = (rx_payload.data[1] >> 4) & 15;
 //				//tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
@@ -605,10 +608,11 @@ int main(void)
 		esb_start_rx();
 		tx_payload_pair.noack = false;
 		uint64_t addr = (((uint64_t)(NRF_FICR->DEVICEADDR[1]) << 32) | NRF_FICR->DEVICEADDR[0]) & 0xFFFFFF;
-		LOG_INF("Device address %lld", addr);
+//		LOG_INF("Device address %lld", addr);
 		for (int i = 0; i < 6; i++) {
 			tx_payload_pair.data[i+2] = (addr >> (8 * i)) & 0xFF;
 		}
+		LOG_INF("Device address: %02X %02X %02X %02X %02X %02X", tx_payload_pair.data[2], tx_payload_pair.data[3], tx_payload_pair.data[4], tx_payload_pair.data[5], tx_payload_pair.data[6], tx_payload_pair.data[7]);
 		while (true) { // Run indefinitely (User must reset/unplug dongle)
 			uint64_t found_addr = 0;
 			for (int i = 0; i < 6; i++) { // Take device address from RX buffer
