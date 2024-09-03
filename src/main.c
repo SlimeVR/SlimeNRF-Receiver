@@ -135,9 +135,9 @@ void event_handler(struct esb_evt const *event)
 				}
 				esb_write_payload(&tx_payload_pair); // Add to TX buffer
 			} else {
-				LOG_DBG("RX: %02X %02X %02X %02X", tx_payload_pair.data[0], tx_payload_pair.data[1], tx_payload_pair.data[2], tx_payload_pair.data[3]);
-				LOG_DBG("    %02X%02X %02X%02X %02X%02X %02X%02X", tx_payload_pair.data[4], tx_payload_pair.data[5], tx_payload_pair.data[6], tx_payload_pair.data[7], tx_payload_pair.data[8], tx_payload_pair.data[9], tx_payload_pair.data[10], tx_payload_pair.data[11]);
-				LOG_DBG("    %02X%02X %02X%02X %02X%02X", tx_payload_pair.data[12], tx_payload_pair.data[13], tx_payload_pair.data[14], tx_payload_pair.data[15], tx_payload_pair.data[16], tx_payload_pair.data[17]);
+				LOG_DBG("RX: %02X %02X %02X %02X", rx_payload.data[0], rx_payload.data[1], rx_payload.data[2], rx_payload.data[3]);
+				LOG_DBG("    %02X%02X %02X%02X %02X%02X %02X%02X", rx_payload.data[4], rx_payload.data[5], rx_payload.data[6], rx_payload.data[7], rx_payload.data[8], rx_payload.data[9], rx_payload.data[10], rx_payload.data[11]);
+				LOG_DBG("    %02X%02X %02X%02X %02X%02X", rx_payload.data[12], rx_payload.data[13], rx_payload.data[14], rx_payload.data[15], rx_payload.data[16], rx_payload.data[17]);
 //				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL3);
 //				uint8_t id = (rx_payload.data[1] >> 4) & 15;
 //				//tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
