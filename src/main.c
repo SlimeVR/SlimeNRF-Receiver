@@ -533,7 +533,7 @@ int main(void)
 	fs.sector_count = 4U; // 4 sectors
 	nvs_mount(&fs);
 
-#if CONFIG_BOARD_SUPERMINI|CONFIG_BOARD_ETEE_DONGLE // Using Adafruit bootloader
+#if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
 	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
 #endif
 
@@ -572,7 +572,7 @@ int main(void)
 		LOG_INF("%d devices stored", stored_trackers);
 	}
 
-#if CONFIG_BOARD_SUPERMINI|CONFIG_BOARD_ETEE_DONGLE // Using Adafruit bootloader
+#if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
 	if (reset_mode >= 3) { // DFU_MAGIC_UF2_RESET, Reset mode DFU
 		NRF_POWER->GPREGRET = 0x57;
 		sys_reboot(SYS_REBOOT_COLD);
