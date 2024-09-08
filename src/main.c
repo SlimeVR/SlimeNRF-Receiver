@@ -25,6 +25,7 @@
 
 #define DFU_DBL_RESET_MEM 0x20007F7C
 #define DFU_DBL_RESET_APP 0x4ee5677e
+#define IGNORE_RESET true // If sw0 available, don't change any reset behavior
 
 uint32_t* dbl_reset_mem = ((uint32_t*) DFU_DBL_RESET_MEM);
 
@@ -509,7 +510,7 @@ void timer_init(void) {
 	irq_enable(TIMER1_IRQn);
 }
 
-#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
+#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) && IGNORE_RESET // Alternate button if available to use as "reset key"
 static struct gpio_callback button_cb_data;
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
@@ -536,11 +537,11 @@ int main(void)
 	fs.sector_count = 4U; // 4 sectors
 	nvs_mount(&fs);
 
-#if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
+#if CONFIG_BUILD_OUTPUT_UF2 && !(IGNORE_RESET && DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios)) // Using Adafruit bootloader
 	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
 #endif
 
-#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
+#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) && IGNORE_RESET // Alternate button if available to use as "reset key"
 	const struct gpio_dt_spec button0 = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 	gpio_pin_configure_dt(&button0, GPIO_INPUT);
 	reset_reason |= gpio_pin_get_dt(&button0);
@@ -575,7 +576,7 @@ int main(void)
 		LOG_INF("%d devices stored", stored_trackers);
 	}
 
-#if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
+#if CONFIG_BUILD_OUTPUT_UF2 && !(IGNORE_RESET && DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios)) // Using Adafruit bootloader
 	if (reset_mode >= 3) { // DFU_MAGIC_UF2_RESET, Reset mode DFU
 		NRF_POWER->GPREGRET = 0x57;
 		sys_reboot(SYS_REBOOT_COLD);
