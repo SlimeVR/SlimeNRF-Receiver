@@ -510,7 +510,7 @@ void timer_init(void) {
 	irq_enable(TIMER1_IRQn);
 }
 
-#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) && IGNORE_RESET // Alternate button if available to use as "reset key"
+#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
 static struct gpio_callback button_cb_data;
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
@@ -541,7 +541,7 @@ int main(void)
 	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
 #endif
 
-#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) && IGNORE_RESET // Alternate button if available to use as "reset key"
+#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
 	const struct gpio_dt_spec button0 = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 	gpio_pin_configure_dt(&button0, GPIO_INPUT);
 	reset_reason |= gpio_pin_get_dt(&button0);
