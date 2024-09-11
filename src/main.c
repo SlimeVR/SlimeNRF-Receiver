@@ -510,11 +510,50 @@ void timer_init(void) {
 }
 
 #if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
+const struct gpio_dt_spec button0 = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 static struct gpio_callback button_cb_data;
+int64_t press_time;
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
-	sys_reboot(SYS_REBOOT_COLD); // treat like pin reset but without pin reset reason
+	if (gpio_pin_get_dt(&button0))
+	{
+		press_time = k_uptime_get();
+	}
+	else
+	{
+		if (press_time != 0 && k_uptime_get() - press_time > 50) // Debounce
+			sys_reboot(SYS_REBOOT_COLD); // treat like pin reset but without pin reset reason
+		press_time = 0;
+	}
 }
+
+bool button_init;
+void sys_button_init(void)
+{
+#if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
+	if (!button_init)
+	{
+		gpio_pin_configure_dt(&button0, GPIO_INPUT);
+		gpio_pin_interrupt_configure_dt(&button0, GPIO_INT_EDGE_BOTH);
+		gpio_init_callback(&button_cb_data, button_pressed, BIT(button0.pin));
+		gpio_add_callback(button0.port, &button_cb_data);
+		button_init = true;
+	}
+#endif
+}
+
+void button_thread(void)
+{
+	sys_button_init();
+	while (1)
+	{
+		k_msleep(10);
+		if (press_time != 0 && k_uptime_get() - press_time > 50 && gpio_pin_get_dt(&button0)) // Button is being pressed
+			sys_reboot(SYS_REBOOT_COLD);
+	}
+}
+
+K_THREAD_DEFINE(button_thread_id, 256, button_thread, NULL, NULL, NULL, 6, 0, 0);
 #endif
 
 uint8_t reset_mode = 0;
@@ -541,12 +580,8 @@ int main(void)
 #endif
 
 #if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
-	const struct gpio_dt_spec button0 = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
-	gpio_pin_configure_dt(&button0, GPIO_INPUT);
+	sys_button_init();
 	reset_reason |= gpio_pin_get_dt(&button0);
-	gpio_pin_interrupt_configure_dt(&button0, GPIO_INT_EDGE_TO_ACTIVE);
-	gpio_init_callback(&button_cb_data, button_pressed, BIT(button0.pin));
-	gpio_add_callback(button0.port, &button_cb_data);
 #endif
 
 	//int64_t time_begin = k_uptime_get();
