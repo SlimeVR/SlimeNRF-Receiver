@@ -182,13 +182,14 @@ void event_handler(struct esb_evt const *event)
 				report.battery=rx_payload.data[2];
 				report.batt_mV=((int)rx_payload.data[3] + 245) * 10;
 				report.rssi=rx_payload.rssi;
-				report.qi=(((uint16_t)rx_payload.data[4] << 8) | rx_payload.data[5]);
-				report.qj=(((uint16_t)rx_payload.data[6] << 8) | rx_payload.data[7]);
-				report.qk=(((uint16_t)rx_payload.data[8] << 8) | rx_payload.data[9]);
-				report.ql=(((uint16_t)rx_payload.data[10] << 8) | rx_payload.data[11]);
-				report.ax=(((uint16_t)rx_payload.data[12] << 8) | rx_payload.data[13]);
-				report.ay=(((uint16_t)rx_payload.data[14] << 8) | rx_payload.data[15]);
-				report.az=(((uint16_t)rx_payload.data[16] << 8) | rx_payload.data[17]);
+				uint16_t *buf = (uint16_t *)&rx_payload.data[4];
+				report.qi=buf[0];
+				report.qj=buf[1];
+				report.qk=buf[2];
+				report.ql=buf[3];
+				report.ax=buf[4];
+				report.ay=buf[5];
+				report.az=buf[6];
 				// TODO: this sucks
 				for (int i = 0; i < report_count; i++) { // replace existing entry instead
 					if (reports[sizeof(report) * (report_sent+i) + 1] == imu_id) {
