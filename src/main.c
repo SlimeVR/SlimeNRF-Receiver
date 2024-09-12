@@ -47,13 +47,17 @@ static struct nvs_fs fs;
 
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 
-#define pi 3.141592653589793238462643383279502884f
+#define M_PI 3.141592653589793238462643383279502884f
+
+// Saturate int to 16 bits
+// Optimized to a single ARM assembler instruction
+#define SATURATE_INT16(x) ((x) > 32767 ? 32767 : ((x) < -32768 ? -32768 : (x)))
 
 #define INT16_TO_UINT16(x) ((uint16_t)32768 + (uint16_t)(x))
 #define UINT16_TO_INT16(x) (int16_t)((uint16_t)(x) - (uint16_t)32768)
-#define TO_FIXED_14(x) ((int16_t)((x) * (1 << 14)))
+#define TO_FIXED_15(x) ((int16_t)((x) * (1 << 15)))
 #define TO_FIXED_10(x) ((int16_t)((x) * (1 << 10)))
-#define FIXED_14_TO_DOUBLE(x) (((double)(x)) / (1 << 14))
+#define FIXED_15_TO_DOUBLE(x) (((double)(x)) / (1 << 15))
 #define FIXED_10_TO_DOUBLE(x) (((double)(x)) / (1 << 10))
 
 LOG_MODULE_REGISTER(esb_prx, LOG_LEVEL_INF);
