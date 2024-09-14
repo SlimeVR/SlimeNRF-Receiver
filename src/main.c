@@ -45,6 +45,8 @@ static struct nvs_fs fs;
 #define STORED_ADDR_0 3
 // 0-15 -> id 3-18
 
+#include "retained.h"
+
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 
 #define M_PI 3.141592653589793238462643383279502884f
@@ -582,11 +584,20 @@ int main(void)
 
 #if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
 	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
+	ram_range_retain(dbl_reset_mem, sizeof(dbl_reset_mem), true);
 #endif
 
 #if DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios) // Alternate button if available to use as "reset key"
 	sys_button_init();
 	reset_reason |= gpio_pin_get_dt(&button0);
+#endif
+
+#ifdef CONFIG_BOARD_ETEE_DONGLE // has no controls at all
+#define REBOOT_COUNT_ON_POWER_ON true
+#endif
+
+#ifdef REBOOT_COUNT_ON_POWER_ON // if for whatever reason the device has literally no accessible controls
+	reset_reason |= 0x01;
 #endif
 
 	//int64_t time_begin = k_uptime_get();
