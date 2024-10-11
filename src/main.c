@@ -32,6 +32,8 @@ uint32_t* dbl_reset_mem = ((uint32_t*) DFU_DBL_RESET_MEM);
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/fs/nvs.h>
 
+#include <zephyr/console/console.h>
+
 static struct nvs_fs fs;
 
 #define NVS_PARTITION		storage_partition
