@@ -574,7 +574,7 @@ void console_thread(void)
 {
 //	console_init();
 	console_getline_init();
-	printk("*** SlimeVR SlimeNRF Receiver ***\n");
+	printk("*** " CONFIG_USB_DEVICE_MANUFACTURER " " CONFIG_USB_DEVICE_PRODUCT " ***\n");
 	printk("reboot                       Soft reset the device\n");
 	printk("pair                         Enter pairing mode\n");
 	printk("clear                        Clear stored devices\n");
