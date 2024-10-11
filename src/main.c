@@ -741,25 +741,17 @@ int main(void)
 
 	int err;
 
-	LOG_INF("Enhanced ShockBurst prx sample");
-
 	err = esb_initialize();
 	if (err) {
 		LOG_ERR("ESB initialization failed, err %d", err);
 		return 0;
 	}
 
-	LOG_INF("Initialization complete");
-
-	LOG_INF("Setting up for packet reception");
-
 	err = esb_start_rx();
 	if (err) {
 		LOG_ERR("RX setup failed, err %d", err);
 		return 0;
 	}
-
-	LOG_INF("Starting application");
 
 	tx_payload_timer.noack = true;
 	tx_payload_sync.noack = true;
