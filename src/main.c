@@ -62,7 +62,7 @@ static struct nvs_fs fs;
 #define FIXED_15_TO_DOUBLE(x) (((double)(x)) / (1 << 15))
 #define FIXED_10_TO_DOUBLE(x) (((double)(x)) / (1 << 10))
 
-LOG_MODULE_REGISTER(esb_prx, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 uint8_t stored_trackers = 0;
 uint64_t stored_tracker_addr[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
