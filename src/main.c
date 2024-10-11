@@ -570,6 +570,65 @@ void button_thread(void)
 K_THREAD_DEFINE(button_thread_id, 256, button_thread, NULL, NULL, NULL, 6, 0, 0);
 #endif
 
+void console_thread(void)
+{
+//	console_init();
+	console_getline_init();
+	printk("*** SlimeVR SlimeNRF Receiver ***\n");
+	printk("reboot                       Soft reset the device\n");
+	printk("pair                         Enter pairing mode\n");
+	printk("clear                        Clear stored devices\n");
+	printk("dfu                          Enter DFU bootloader\n");
+
+	uint8_t command_reboot[] = "reboot";
+	uint8_t command_pair[] = "pair";
+	uint8_t command_clear[] = "clear";
+	uint8_t command_dfu[] = "dfu";
+
+	uint8_t reboot_counter = 0;
+
+	while (1) {
+		uint8_t *line = console_getline();
+
+		if (memcmp(line, command_reboot, sizeof(command_reboot)) == 0) {
+			sys_reboot(SYS_REBOOT_COLD);
+		}
+		else if (memcmp(line, command_pair, sizeof(command_pair)) == 0) {
+			reboot_counter = 1;
+			nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
+			sys_reboot(SYS_REBOOT_COLD);
+		}
+		else if (memcmp(line, command_clear, sizeof(command_clear)) == 0) {
+			reboot_counter = 2;
+			nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
+			sys_reboot(SYS_REBOOT_COLD);
+		}
+		else if (memcmp(line, command_dfu, sizeof(command_dfu)) == 0) {
+			NRF_POWER->GPREGRET = 0x57;
+			sys_reboot(SYS_REBOOT_COLD);
+		}
+		else {
+			printk("Unknown command\n");
+		}
+	}
+}
+
+K_THREAD_DEFINE(console_thread_id, 512, console_thread, NULL, NULL, NULL, 6, 0, 0);
+
+static int nvs_init(void)
+{
+	struct flash_pages_info info;
+	fs.flash_device = NVS_PARTITION_DEVICE;
+	fs.offset = NVS_PARTITION_OFFSET; // Start NVS FS here
+	flash_get_page_info_by_offs(fs.flash_device, fs.offset, &info);
+	fs.sector_size = info.size; // Sector size equal to page size
+	fs.sector_count = 4U; // 4 sectors
+	nvs_mount(&fs);
+	return 0;
+}
+
+SYS_INIT(nvs_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+
 uint8_t reset_mode = 0;
 int main(void)
 {
@@ -581,13 +640,6 @@ int main(void)
 	gpio_pin_set_dt(&led, 1); // Boot LED
 
 	// TODO: change pin reset to using memory, so there is less delay between resets
-	struct flash_pages_info info;
-	fs.flash_device = NVS_PARTITION_DEVICE;
-	fs.offset = NVS_PARTITION_OFFSET; // Start NVS FS here
-	flash_get_page_info_by_offs(fs.flash_device, fs.offset, &info);
-	fs.sector_size = info.size; // Sector size equal to page size
-	fs.sector_count = 4U; // 4 sectors
-	nvs_mount(&fs);
 
 #if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
 	(*dbl_reset_mem) = DFU_DBL_RESET_APP; // Skip DFU
@@ -599,24 +651,16 @@ int main(void)
 	reset_reason |= gpio_pin_get_dt(&button0);
 #endif
 
-#ifdef CONFIG_BOARD_ETEE_DONGLE // has no controls at all
-#define REBOOT_COUNT_ON_POWER_ON true
-#endif
-
-#ifdef REBOOT_COUNT_ON_POWER_ON // if for whatever reason the device has literally no accessible controls
-	reset_reason |= 0x01;
-#endif
-
 	//int64_t time_begin = k_uptime_get();
+	nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
+	reset_mode = reboot_counter;
 	if (reset_reason & 0x01) { // Count pin resets
-		nvs_read(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
-		reset_mode = reboot_counter;
 		reboot_counter++;
 		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 		k_msleep(1000); // Wait before clearing counter and continuing
-		reboot_counter = 0;
-		nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 	}
+	reboot_counter = 0;
+	nvs_write(&fs, RBT_CNT_ID, &reboot_counter, sizeof(reboot_counter));
 
 	if (reset_mode == 2) { // Clear stored data
 		reset_mode = 1; // Enter pairing mode
