@@ -15,6 +15,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/types.h>
 #include <math.h>
+#include <zephyr/sys/crc.h>
 
 #include <zephyr/init.h>
 
@@ -46,32 +47,43 @@ static struct nvs_fs fs;
 #define RBT_CNT_ID 2
 #define STORED_ADDR_0 3
 // 0-15 -> id 3-18
+// 0-255 -> id 3-258
 
 #include "retained.h"
 
 #define ZEPHYR_USER_NODE DT_PATH(zephyr_user)
 
+#define MAX_TRACKERS 256
+#define DETECTION_THRESHOLD 16
+
+#ifndef M_PI
 #define M_PI 3.141592653589793238462643383279502884f
+#endif
 
 // Saturate int to 16 bits
 // Optimized to a single ARM assembler instruction
 #define SATURATE_INT16(x) ((x) > 32767 ? 32767 : ((x) < -32768 ? -32768 : (x)))
 
-#define INT16_TO_UINT16(x) ((uint16_t)32768 + (uint16_t)(x))
-#define UINT16_TO_INT16(x) (int16_t)((uint16_t)(x) - (uint16_t)32768)
-#define TO_FIXED_15(x) ((int16_t)((x) * (1 << 15)))
+#define SATURATE_UINT11(x) ((x) > 2047 ? 2047 : ((x) < 0 ? 0 : (x)))
+#define SATURATE_UINT10(x) ((x) > 1023 ? 1023 : ((x) < 0 ? 0 : (x)))
+
+#define TO_FIXED_15(x) ((int16_t)SATURATE_INT16((x) * (1 << 15)))
+#define TO_FIXED_11(x) ((int16_t)((x) * (1 << 11)))
 #define TO_FIXED_10(x) ((int16_t)((x) * (1 << 10)))
+#define TO_FIXED_7(x) ((int16_t)SATURATE_INT16((x) * (1 << 7)))
 #define FIXED_15_TO_DOUBLE(x) (((double)(x)) / (1 << 15))
+#define FIXED_11_TO_DOUBLE(x) (((double)(x)) / (1 << 11))
 #define FIXED_10_TO_DOUBLE(x) (((double)(x)) / (1 << 10))
+#define FIXED_7_TO_DOUBLE(x) (((double)(x)) / (1 << 7))
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 uint8_t stored_trackers = 0;
-uint64_t stored_tracker_addr[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+uint64_t stored_tracker_addr[MAX_TRACKERS] = {0};
 
 uint8_t discovered_trackers[256];
 
-uint8_t pairing_buf[8] = {0,0,0,0,0,0,0,0};
+uint8_t pairing_buf[8] = {0};
 
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
@@ -89,31 +101,9 @@ const struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(ZEPHYR_USER_NODE, led_gpios,
 static struct k_work report_send;
 
 static struct tracker_report {
-	uint8_t type; //reserved
-	uint8_t imu_id;
-	uint8_t rssi;
-	uint8_t battery;
-	uint16_t batt_mV;
-	uint16_t qi;
-	uint16_t qj;
-	uint16_t qk;
-	uint16_t ql;
-	uint16_t ax;
-	uint16_t ay;
-	uint16_t az;
+	uint8_t data[16];
 } __packed report = {
-	.type = 0,
-	.imu_id = 0,
-	.rssi = 0,
-	.battery = 0,
-	.batt_mV = 0,
-	.qi = 0,
-	.qj = 0,
-	.qk = 0,
-	.ql = 0,
-	.ax = 0,
-	.ay = 0,
-	.az = 0
+	.data = {0}
 };;
 
 uint8_t reports[256*sizeof(report)];
@@ -125,86 +115,64 @@ int blink = 0;
 #include <nrfx_timer.h>
 static const nrfx_timer_t m_timer = NRFX_TIMER_INSTANCE(1);
 
+//|b0      |b1      |b2      |b3      |b4      |b5      |b6      |b7      |b8      |b9      |b10     |b11     |b12     |b13     |b14     |b15     |
+//|type    |id      |packet data                                                                                                                  |
+//|0       |id      |proto   |batt    |batt_v  |temp    |brd_id  |mcu_id  |imu_id  |mag_id  |fw_date          |major   |minor   |patch   |rssi    |
+//|1       |id      |q0               |q1               |q2               |q3               |a0               |a1               |a2               |
+//|2       |id      |batt    |batt_v  |temp    |q_buf                              |a0               |a1               |a2               |rssi    |
+//|3	   |id      |svr_stat|status  |resv                                                                                              |rssi    |
+//|255     |id      |addr                                                 |resv                                                                   |
+
+void packet_device_addr(uint8_t *report, uint16_t id) // associate id and tracker address
+{
+	report[0] = 255; // receiver packet 0
+	report[1] = id;
+	memcpy(&report[2], &stored_tracker_addr[id], 6);
+	memset(&report[8], 0, 8); // last 8 bytes unused for now
+}
+
 void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
 	case ESB_EVENT_TX_SUCCESS:
-		//LOG_DBG("TX SUCCESS");
+		LOG_DBG("TX SUCCESS");
 		break;
 	case ESB_EVENT_TX_FAILED:
+		LOG_DBG("TX FAILED");
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 	// make tx payload for ack here
-		if (esb_read_rx_payload(&rx_payload) == 0) {
-			if (rx_payload.length == 8) {
+		if (!esb_read_rx_payload(&rx_payload)) {
+			switch (rx_payload.length)
+			{
+			case 8:
 				LOG_INF("RX Pairing Packet");
-				for (int i = 0; i < 8; i++) {
-					pairing_buf[i] = rx_payload.data[i];
-				}
+				memcpy(pairing_buf, rx_payload.data, 8);
 				esb_write_payload(&tx_payload_pair); // Add to TX buffer
-			} else {
-				LOG_DBG("RX: %02X %02X %02X %02X", rx_payload.data[0], rx_payload.data[1], rx_payload.data[2], rx_payload.data[3]);
-				LOG_DBG("    %02X%02X %02X%02X %02X%02X %02X%02X", rx_payload.data[4], rx_payload.data[5], rx_payload.data[6], rx_payload.data[7], rx_payload.data[8], rx_payload.data[9], rx_payload.data[10], rx_payload.data[11]);
-				LOG_DBG("    %02X%02X %02X%02X %02X%02X", rx_payload.data[12], rx_payload.data[13], rx_payload.data[14], rx_payload.data[15], rx_payload.data[16], rx_payload.data[17]);
-//				int32_t cc_timer = nrfx_timer_capture(&m_timer, NRF_TIMER_CC_CHANNEL3);
-//				uint8_t id = (rx_payload.data[1] >> 4) & 15;
-//				//tx_payload_timer.data[0] = stored_tracker_addr[id] & 255;
-//				//tx_payload_timer.data[1] = id;
-//				//tx_payload_timer.data[2] = (cc_timer >> 8) & 255;
-//				//tx_payload_timer.data[3] = cc_timer & 255;
-//				uint32_t length = nrfx_timer_ms_to_ticks(&m_timer, 3);
-//				int32_t offset = length * id / 16;
-//				if (id == 8) {
-//					offset = 2333;
-//				} else {
-//					offset = 667;
-//				}
-//				int32_t correction = (offset - cc_timer) / 2;
-//				LOG_INF("ID %u, Trigger %ld", id, cc_timer);
-//				int8_t out;
-//				if (correction >= -64 && correction <= 64) {
-//					out = correction;
-//				} else if (correction > 0) {
-//					out = 64;
-//					out = correction / 32 + 62;
-//				} else {
-//					out = -64;
-//					out = correction / 32 - 62;
-//				}
-//				tx_payload_timer.data[id+1] = (uint8_t)out + 127;
-//				esb_write_payload(&tx_payload_timer);
-				// instead of making specific ack packet for all devices maybe instead have generic timestamp?
-				// or send same ack packet which contains all necessary data for every device?
-				// or use pipes and contain data for two devices, but you will need a bigger tx buffer..
-				//report.type=rx_payload.data[0]; // for later
+				break;
+			case 16:
 				uint8_t imu_id = rx_payload.data[1];
-				if (discovered_trackers[imu_id] < 16) { // garbage filtering of nonexistant tracker
+				if (discovered_trackers[imu_id] < DETECTION_THRESHOLD) { // garbage filtering of nonexistent tracker
 					discovered_trackers[imu_id]++;
-					break;
+					return;
 				}
-				report.imu_id=imu_id;
-				report.battery=rx_payload.data[2];
-				report.batt_mV=((int)rx_payload.data[3] + 245) * 10;
-				report.rssi=rx_payload.rssi;
-				uint16_t *buf = (uint16_t *)&rx_payload.data[4];
-				report.qi=buf[0];
-				report.qj=buf[1];
-				report.qk=buf[2];
-				report.ql=buf[3];
-				report.ax=buf[4];
-				report.ay=buf[5];
-				report.az=buf[6];
+				if (rx_payload.data[0] > 223) // reserved for receiver only
+					break;
+				memcpy(&report.data, &rx_payload.data, 16); // all data can be passed through
+				if (rx_payload.data[0] != 1) // packet 1 is full precision quat and accel, no room for rssi
+					report.data[15]=rx_payload.rssi;
 				// TODO: this sucks
 				for (int i = 0; i < report_count; i++) { // replace existing entry instead
-					if (reports[sizeof(report) * (report_sent+i) + 1] == imu_id) {
+					if (reports[sizeof(report) * (report_sent+i) + 1] == report.data[1]) {
 						memcpy(&reports[sizeof(report) * (report_sent+i)], &report, sizeof(report));
-						k_work_submit(&report_send);
+//						k_work_submit(&report_send);
 						break;
 					}
 				}
 				memcpy(&reports[sizeof(report) * (report_sent+report_count)], &report, sizeof(report));
 				report_count++;
-				k_work_submit(&report_send);
+//				k_work_submit(&report_send);
+				break;
 			}
 		} else {
 			LOG_ERR("Error while reading rx packet");
@@ -355,7 +323,8 @@ static const struct device *hdev;
 static ATOMIC_DEFINE(hid_ep_in_busy, 1);
 
 #define HID_EP_BUSY_FLAG	0
-#define REPORT_PERIOD		K_SECONDS(5)
+//#define REPORT_PERIOD		K_SECONDS(5)
+#define REPORT_PERIOD		K_MSEC(1) // streaming reports
 
 static void report_event_handler(struct k_timer *dummy);
 static K_TIMER_DEFINE(event_timer, report_event_handler, NULL);
@@ -366,26 +335,37 @@ static const uint8_t hid_report_desc[] = {
 	HID_COLLECTION(HID_COLLECTION_APPLICATION),
 		HID_USAGE(HID_USAGE_GEN_DESKTOP_UNDEFINED),
 		HID_REPORT_SIZE(8),
-		HID_REPORT_COUNT(60),
+		HID_REPORT_COUNT(64),
 		HID_INPUT(0x02),
 	HID_END_COLLECTION,
 };
 
+uint16_t sent_device_addr = 0;
+bool usb_enabled = false;
+
 static void send_report(struct k_work *work)
 {
-	if (report_count == 0) return;
+	if (!usb_enabled) return;
+//	if (report_count == 0) return;
+	if (!stored_trackers) return;
 	int ret, wrote;
 
 	if (!atomic_test_and_set_bit(hid_ep_in_busy, HID_EP_BUSY_FLAG)) {
 		// TODO: this really sucks, how can i send as much or as little as i want instead??
-		for (int i = report_count; i < 3; i++) memcpy(&reports[sizeof(report) * (report_sent+i)], &reports[sizeof(report) * report_sent], sizeof(report)); // just duplicate first entry a bunch, this will definitely cause problems
+//		for (int i = report_count; i < 4; i++) memcpy(&reports[sizeof(report) * (report_sent+i)], &reports[sizeof(report) * report_sent], sizeof(report)); // just duplicate first entry a bunch, this will definitely cause problems
+		// cycle through devices and send associated address for server to register
+		for (int i = report_count; i < 4; i++) {
+			packet_device_addr(&reports[sizeof(report) * (report_sent+i)], sent_device_addr);
+			sent_device_addr++;
+			sent_device_addr %= stored_trackers;
+		}
 //		ret = hid_int_ep_write(hdev, &reports, sizeof(report) * report_count, &wrote);
-		ret = hid_int_ep_write(hdev, &reports[sizeof(report) * report_sent], sizeof(report) * 3, &wrote);
-		if (report_count > 3) {
-			LOG_INF("left %u reports on the table", report_count - 3);
+		ret = hid_int_ep_write(hdev, &reports[sizeof(report) * report_sent], sizeof(report) * 4, &wrote);
+		if (report_count > 4) {
+			LOG_INF("left %u reports on the table", report_count - 4);
 		}
 		report_sent += report_count;
-		report_sent += 2;
+		report_sent += 3; // this is a hack to make sure the ep isnt reading the same bits as trackers write to
 		if (report_sent > 128) report_sent = 0; // an attempt to make ringbuffer so the ep isnt reading the same bits as trackers write to
 		report_count = 0;
 		if (ret != 0) {
@@ -418,12 +398,12 @@ static void int_in_ready_cb(const struct device *dev)
 static void on_idle_cb(const struct device *dev, uint16_t report_id)
 {
 	LOG_DBG("On idle callback");
-	k_work_submit(&report_send);
+	if (usb_enabled) k_work_submit(&report_send);
 }
 
 static void report_event_handler(struct k_timer *dummy)
 {
-	k_work_submit(&report_send);
+	if (usb_enabled) k_work_submit(&report_send);
 }
 
 static void protocol_cb(const struct device *dev, uint8_t protocol)
@@ -665,16 +645,13 @@ int main(void)
 	if (reset_mode == 2) { // Clear stored data
 		reset_mode = 1; // Enter pairing mode
 		nvs_write(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
-		for (int i = 0; i < 16; i++) {
-			nvs_write(&fs, STORED_ADDR_0+i, &stored_tracker_addr[i], sizeof(stored_tracker_addr[0]));
-		}
 		LOG_INF("NVS Reset");
 	} else {
 		nvs_read(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
-		for (int i = 0; i < 16; i++) {
+		for (int i = 0; i < stored_trackers; i++) {
 			nvs_read(&fs, STORED_ADDR_0+i, &stored_tracker_addr[i], sizeof(stored_tracker_addr[0]));
 		}
-		LOG_INF("%d devices stored", stored_trackers);
+		LOG_INF("%d/%d devices stored", stored_trackers, MAX_TRACKERS);
 	}
 
 #if CONFIG_BUILD_OUTPUT_UF2 // Using Adafruit bootloader
@@ -687,18 +664,15 @@ int main(void)
 	gpio_pin_set_dt(&led, 0);
 
 	usb_enable(status_cb);
-
 	k_work_init(&report_send, send_report);
+	usb_enabled = true;
 
 	clocks_start();
+
 
 	if (stored_trackers == 0 || reset_mode == 1) { // Pairing mode
 		reset_mode = 0;
 		LOG_INF("Starting in pairing mode");
-		for (int i = 0; i < stored_trackers; i++) {
-			report.imu_id = i << 4;
-			k_work_submit(&report_send);
-		}
 		for (int i = 0; i < 4; i++) {
 			base_addr_0[i] = discovery_base_addr_0[i];
 			base_addr_1[i] = discovery_base_addr_1[i];
@@ -709,35 +683,28 @@ int main(void)
 		esb_initialize();
 		esb_start_rx();
 		tx_payload_pair.noack = false;
-		uint64_t addr = (((uint64_t)(NRF_FICR->DEVICEADDR[1]) << 32) | NRF_FICR->DEVICEADDR[0]) & 0xFFFFFF;
-//		LOG_INF("Device address %lld", addr);
-		for (int i = 0; i < 6; i++) {
-			tx_payload_pair.data[i+2] = (addr >> (8 * i)) & 0xFF;
-		}
-		LOG_INF("Device address: %02X %02X %02X %02X %02X %02X", tx_payload_pair.data[2], tx_payload_pair.data[3], tx_payload_pair.data[4], tx_payload_pair.data[5], tx_payload_pair.data[6], tx_payload_pair.data[7]);
+		uint64_t *addr = (uint64_t *)NRF_FICR->DEVICEADDR; // Use device address as unique identifier (although it is not actually guaranteed, see datasheet)
+		memcpy(&tx_payload_pair.data[2], addr, 6);
+		LOG_INF("Device address: %012llX", *addr & 0xFFFFFFFFFFFF);
 		while (true) { // Run indefinitely (User must reset/unplug dongle)
-			uint64_t found_addr = 0;
-			for (int i = 0; i < 6; i++) { // Take device address from RX buffer
-				found_addr |= (uint64_t)pairing_buf[i+2] << (8*i);
-			}
+			uint64_t found_addr = (*(uint64_t *)&pairing_buf[0] >> 16) & 0xFFFFFFFFFFFF;
 			uint16_t send_tracker_id = stored_trackers; // Use new tracker id
 			for (int i = 0; i < stored_trackers; i++) { // Check if the device is already stored
 				if (found_addr != 0 && stored_tracker_addr[i] == found_addr) {
-					//LOG_INF("Found device linked to id %d with address %lld", i, found_addr);
+					//LOG_INF("Found device linked to id %d with address %012llX", i, found_addr);
 					send_tracker_id = i;
 				}
 			}
-			if (found_addr != 0 && send_tracker_id == stored_trackers && stored_trackers < 16) { // New device, add to NVS
-				LOG_INF("Added device on id %d with address %lld", stored_trackers, found_addr);
-				report.imu_id = stored_trackers << 4;
+			uint8_t checksum = crc8_ccitt(0x07, &pairing_buf[2], 6); // make sure the packet is valid
+			if (checksum == pairing_buf[0] && found_addr != 0 && send_tracker_id == stored_trackers && stored_trackers < MAX_TRACKERS) { // New device, add to NVS
+				LOG_INF("Added device on id %d with address %012llX", stored_trackers, found_addr);
 				stored_tracker_addr[stored_trackers] = found_addr;
 				nvs_write(&fs, STORED_ADDR_0+stored_trackers, &stored_tracker_addr[stored_trackers], sizeof(stored_tracker_addr[0]));
 				stored_trackers++;
 				nvs_write(&fs, STORED_TRACKERS, &stored_trackers, sizeof(stored_trackers));
-				k_work_submit(&report_send);
 			}
-			if (send_tracker_id < 16) { // Make sure the dongle is not full
-				tx_payload_pair.data[0] = pairing_buf[0]; // Use int sent from device to make sure packet is for that device
+			if (checksum == pairing_buf[0] && send_tracker_id < MAX_TRACKERS) { // Make sure the dongle is not full
+				tx_payload_pair.data[0] = pairing_buf[0]; // Use checksum sent from device to make sure packet is for that device
 			} else {
 				tx_payload_pair.data[0] = 0; // Invalidate packet
 			}
@@ -820,7 +787,7 @@ int main(void)
 		blink++;
 		blink %= 10;
 		for (int i = 0; i < 256; i++) {
-			if (discovered_trackers[i] < 16) {
+			if (discovered_trackers[i] < DETECTION_THRESHOLD) {
 				discovered_trackers[i] = 0;
 			}
 		}
