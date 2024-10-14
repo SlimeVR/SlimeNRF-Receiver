@@ -173,6 +173,8 @@ void event_handler(struct esb_evt const *event)
 				report_count++;
 //				k_work_submit(&report_send);
 				break;
+			default:
+				break;
 			}
 		} else {
 			LOG_ERR("Error while reading rx packet");
@@ -696,6 +698,8 @@ int main(void)
 				}
 			}
 			uint8_t checksum = crc8_ccitt(0x07, &pairing_buf[2], 6); // make sure the packet is valid
+			if (checksum == 0)
+				checksum = 8;
 			if (checksum == pairing_buf[0] && found_addr != 0 && send_tracker_id == stored_trackers && stored_trackers < MAX_TRACKERS) { // New device, add to NVS
 				LOG_INF("Added device on id %d with address %012llX", stored_trackers, found_addr);
 				stored_tracker_addr[stored_trackers] = found_addr;
@@ -726,10 +730,10 @@ int main(void)
 	}
 
 	// Generate addresses from device address
-	uint64_t addr = (((uint64_t)(NRF_FICR->DEVICEADDR[1]) << 32) | NRF_FICR->DEVICEADDR[0]) & 0xFFFFFF;
+	uint64_t *addr = (uint64_t *)NRF_FICR->DEVICEADDR; // Use device address as unique identifier (although it is not actually guaranteed, see datasheet)
 	uint8_t buf[8] = {0,0,0,0,0,0,0,0};
 	for (int i = 0; i < 6; i++) {
-		buf[i+2] = (addr >> (8 * i)) & 0xFF;
+		buf[i+2] = (*addr >> (8 * i)) & 0xFF;
 	}
 	uint8_t buf2[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 	for (int i = 0; i < 4; i++) {
