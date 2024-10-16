@@ -81,7 +81,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 uint8_t stored_trackers = 0;
 uint64_t stored_tracker_addr[MAX_TRACKERS] = {0};
 
-uint8_t discovered_trackers[256];
+uint8_t discovered_trackers[256] = {0};
 
 uint8_t pairing_buf[8] = {0};
 
@@ -700,7 +700,7 @@ int main(void)
 		memcpy(&tx_payload_pair.data[2], addr, 6);
 		LOG_INF("Device address: %012llX", *addr & 0xFFFFFFFFFFFF);
 		while (true) { // Run indefinitely (User must reset/unplug dongle)
-			uint64_t found_addr = (*(uint64_t *)&pairing_buf[0] >> 16) & 0xFFFFFFFFFFFF;
+			uint64_t found_addr = (*(uint64_t *)pairing_buf >> 16) & 0xFFFFFFFFFFFF;
 			uint16_t send_tracker_id = stored_trackers; // Use new tracker id
 			for (int i = 0; i < stored_trackers; i++) { // Check if the device is already stored
 				if (found_addr != 0 && stored_tracker_addr[i] == found_addr) {
@@ -786,9 +786,7 @@ int main(void)
 
 	timer_init();
 
-	for (int i = 0; i < 256; i++) {
-		discovered_trackers[i] = 0;
-	}
+	memset(discovered_trackers, 0, sizeof(discovered_trackers));
 
 	while (true) { // this should be a timer but lazy; reset count if its not above threshold
 		if (blink == 0) {
