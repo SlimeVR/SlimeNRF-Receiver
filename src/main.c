@@ -163,13 +163,15 @@ void event_handler(struct esb_evt const *event)
 					report.data[15]=rx_payload.rssi;
 				// TODO: this sucks
 				for (int i = 0; i < report_count; i++) { // replace existing entry instead
-					if (reports[sizeof(report) * (report_sent+i) + 1] == report.data[1]) {
-						memcpy(&reports[sizeof(report) * (report_sent+i)], &report, sizeof(report));
+					if (reports[sizeof(report) * (report_sent + i) + 1] == report.data[1]) {
+						memcpy(&reports[sizeof(report) * (report_sent + i)], &report, sizeof(report));
 //						k_work_submit(&report_send);
 						break;
 					}
 				}
-				memcpy(&reports[sizeof(report) * (report_sent+report_count)], &report, sizeof(report));
+				if (report_count > 100) // overflow
+					break;
+				memcpy(&reports[sizeof(report) * (report_sent + report_count)], &report, sizeof(report));
 				report_count++;
 //				k_work_submit(&report_send);
 				break;
@@ -357,7 +359,7 @@ static void send_report(struct k_work *work)
 //		for (int i = report_count; i < 4; i++) memcpy(&reports[sizeof(report) * (report_sent+i)], &reports[sizeof(report) * report_sent], sizeof(report)); // just duplicate first entry a bunch, this will definitely cause problems
 		// cycle through devices and send associated address for server to register
 		for (int i = report_count; i < 4; i++) {
-			packet_device_addr(&reports[sizeof(report) * (report_sent+i)], sent_device_addr);
+			packet_device_addr(&reports[sizeof(report) * (report_sent + i)], sent_device_addr);
 			sent_device_addr++;
 			sent_device_addr %= stored_trackers;
 		}
@@ -400,12 +402,13 @@ static void int_in_ready_cb(const struct device *dev)
 static void on_idle_cb(const struct device *dev, uint16_t report_id)
 {
 	LOG_DBG("On idle callback");
-	if (usb_enabled) k_work_submit(&report_send);
+	k_work_submit(&report_send);
 }
 
 static void report_event_handler(struct k_timer *dummy)
 {
-	if (usb_enabled) k_work_submit(&report_send);
+	if (usb_enabled)
+		k_work_submit(&report_send);
 }
 
 static void protocol_cb(const struct device *dev, uint8_t protocol)
@@ -552,6 +555,18 @@ void button_thread(void)
 K_THREAD_DEFINE(button_thread_id, 256, button_thread, NULL, NULL, NULL, 6, 0, 0);
 #endif
 
+void usb_init_thread(void)
+{
+	k_msleep(1000);
+	usb_disable();
+	k_msleep(1000); // Wait before enabling USB // TODO: why does it need to wait so long
+	usb_enable(status_cb);
+	k_work_init(&report_send, send_report);
+	usb_enabled = true;
+}
+
+K_THREAD_DEFINE(usb_init_thread_id, 256, usb_init_thread, NULL, NULL, NULL, 6, 0, 0);
+
 void console_thread(void)
 {
 //	console_init();
@@ -664,10 +679,6 @@ int main(void)
 #endif
 
 	gpio_pin_set_dt(&led, 0);
-
-	usb_enable(status_cb);
-	k_work_init(&report_send, send_report);
-	usb_enabled = true;
 
 	clocks_start();
 
