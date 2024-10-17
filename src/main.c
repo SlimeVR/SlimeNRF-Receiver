@@ -131,8 +131,6 @@ void packet_device_addr(uint8_t *report, uint16_t id) // associate id and tracke
 	memset(&report[8], 0, 8); // last 8 bytes unused for now
 }
 
-bool usb_enabled = false;
-
 void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
@@ -167,8 +165,7 @@ void event_handler(struct esb_evt const *event)
 				for (int i = 0; i < report_count; i++) { // replace existing entry instead
 					if (reports[sizeof(report) * (report_sent + i) + 1] == report.data[1]) {
 						memcpy(&reports[sizeof(report) * (report_sent + i)], &report, sizeof(report));
-						if (usb_enabled)
-							k_work_submit(&report_send);
+//						k_work_submit(&report_send);
 						break;
 					}
 				}
@@ -176,8 +173,7 @@ void event_handler(struct esb_evt const *event)
 					break;
 				memcpy(&reports[sizeof(report) * (report_sent + report_count)], &report, sizeof(report));
 				report_count++;
-				if (usb_enabled)
-					k_work_submit(&report_send);
+//				k_work_submit(&report_send);
 				break;
 			default:
 				break;
@@ -331,8 +327,8 @@ static const struct device *hdev;
 static ATOMIC_DEFINE(hid_ep_in_busy, 1);
 
 #define HID_EP_BUSY_FLAG	0
-#define REPORT_PERIOD		K_SECONDS(5)
-//#define REPORT_PERIOD		K_MSEC(1) // streaming reports
+//#define REPORT_PERIOD		K_SECONDS(5)
+#define REPORT_PERIOD		K_MSEC(1) // streaming reports
 
 static void report_event_handler(struct k_timer *dummy);
 static K_TIMER_DEFINE(event_timer, report_event_handler, NULL);
@@ -349,13 +345,17 @@ static const uint8_t hid_report_desc[] = {
 };
 
 uint16_t sent_device_addr = 0;
+bool usb_enabled = false;
+int64_t last_registration_sent = 0;
 
 static void send_report(struct k_work *work)
 {
 	if (!usb_enabled) return;
-//	if (report_count == 0) return;
 	if (!stored_trackers) return;
+	if (report_count == 0 && k_uptime_get() - 100 < last_registration_sent) return; // send registrations only every 100ms
 	int ret, wrote;
+
+	last_registration_sent = k_uptime_get();
 
 	if (!atomic_test_and_set_bit(hid_ep_in_busy, HID_EP_BUSY_FLAG)) {
 		// TODO: this really sucks, how can i send as much or as little as i want instead??
