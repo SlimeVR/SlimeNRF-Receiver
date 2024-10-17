@@ -589,6 +589,9 @@ void console_thread(void)
 
 	while (1) {
 		uint8_t *line = console_getline();
+		for (uint8_t *p = line; *p; ++p) {
+			*p = tolower(*p);
+		}
 
 		if (memcmp(line, command_reboot, sizeof(command_reboot)) == 0) {
 			sys_reboot(SYS_REBOOT_COLD);
